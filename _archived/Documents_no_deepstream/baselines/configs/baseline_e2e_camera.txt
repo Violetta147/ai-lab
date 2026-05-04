@@ -1,0 +1,10 @@
+E2E Camera baseline (C++):
+  cd /home/jetson/Documents/infer
+  ./main camera
+
+E2E Camera baseline (Python):
+  cd /home/jetson/Documents
+  python3 model_test.py
+
+Gợi ý chạy song song để lấy tài nguyên:
+  sudo tegrastats

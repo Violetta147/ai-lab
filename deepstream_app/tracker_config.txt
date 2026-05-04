@@ -1,0 +1,22 @@
+%YAML:1.0
+
+# [NvDCF Tracker]
+# DeepStream 6.0.1 Optimized Config for Jetson Nano
+tracker-width: 640
+tracker-height: 384
+gpu-id: 0
+enable-past-frame: 0
+enable-batch-process: 1
+display-tracking-id: 1
+
+# [Data Association]
+minMatchingScore4SizeSimilarity: 0.5
+minMatchingScore4Iou: 0.1
+minMatchingScore4VisualSimilarity: 0.2
+minMatchingScore4Age: 0.1
+
+# [State Estimator]
+# Kalmar Filter params
+probationAge: 3
+maxShadowTrackingAge: 30
+earlyTerminationAge: 1

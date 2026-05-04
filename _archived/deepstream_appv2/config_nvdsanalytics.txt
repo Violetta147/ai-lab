@@ -1,0 +1,27 @@
+[property]
+enable=1
+config-width=640
+config-height=640
+osd-mode=2
+display-font-size=14
+
+## Line crossing counter — counts vehicles crossing this line.
+## Adjust coordinates to match your camera angle.
+## Format: x1;y1;x2;y2;dir_x1;dir_y1;dir_x2;dir_y2
+[line-crossing-stream-0]
+enable=1
+# Street 1 (Left lane — near camera = bottom, far = top)
+#   Counts vehicles moving AWAY from camera past the near line.
+#   → flip arrow if you want to count vehicles APPROACHING instead.
+line-crossing-Entry_1=311;353;353;353;332;341;331;359
+#   Counts vehicles moving AWAY from camera past the far line.
+line-crossing-Exit_1=1;568;160;587;84;560;80;603
+
+# Street 2 (Right lane)
+#   Counts vehicles moving AWAY from camera past the near line.
+line-crossing-Entry_2=242;591;505;596;396;608;388;550
+#   Counts vehicles moving AWAY from camera past the far line.
+line-crossing-Exit_2=363;356;433;357;396;364;396;333
+class-id=-1
+extended=0
+mode=loose

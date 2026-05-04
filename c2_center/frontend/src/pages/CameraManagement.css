@@ -1,0 +1,477 @@
+/* Camera Management Page Styles */
+
+.camera-management {
+  padding: 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.camera-management .header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 32px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid #333;
+}
+
+.camera-management .header-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.camera-management h2 {
+  font-size: 28px;
+  margin: 0;
+  color: #fff;
+}
+
+.camera-management .btn-primary {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.camera-management .btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(102, 126, 234, 0.4);
+}
+
+.camera-management .btn-primary:disabled,
+.camera-management .btn-secondary:disabled,
+.camera-management .btn-success:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Alerts */
+.camera-management .alert {
+  padding: 16px;
+  border-radius: 6px;
+  margin-bottom: 20px;
+  font-weight: 500;
+  animation: slideIn 0.3s ease;
+}
+
+.camera-management .alert-error {
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+  border-left: 4px solid #ef4444;
+}
+
+.camera-management .alert-success {
+  background: rgba(34, 197, 94, 0.1);
+  color: #86efac;
+  border-left: 4px solid #22c55e;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Form Container */
+.camera-management .form-container {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 24px;
+  margin-bottom: 32px;
+  animation: slideIn 0.3s ease;
+}
+
+.camera-management form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.camera-management .form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.camera-management .form-row.full {
+  grid-template-columns: 1fr;
+}
+
+.camera-management label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #aaa;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.camera-management label.checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  color: #aaa;
+  cursor: pointer;
+}
+
+.camera-management label.checkbox input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.camera-management input,
+.camera-management textarea {
+  padding: 10px 12px;
+  background: #222;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 14px;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.camera-management input:focus,
+.camera-management textarea:focus {
+  outline: none;
+  border-color: #667eea;
+  background: #2a2a2a;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.camera-management input:disabled {
+  background: #1a1a1a;
+  color: #666;
+  cursor: not-allowed;
+}
+
+.camera-management .form-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.camera-management .btn-success,
+.camera-management .btn-secondary {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.camera-management .btn-success {
+  background: #22c55e;
+  color: white;
+}
+
+.camera-management .btn-success:hover {
+  background: #16a34a;
+}
+
+.camera-management .btn-secondary {
+  background: #444;
+  color: white;
+}
+
+.camera-management .btn-secondary:hover {
+  background: #555;
+}
+
+.camera-management .media-mtx-preview {
+  background: #111827;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 32px;
+}
+
+.camera-management .media-mtx-preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.camera-management .media-mtx-preview h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #fff;
+}
+
+.camera-management .media-mtx-preview pre {
+  margin: 0;
+  padding: 14px;
+  border-radius: 6px;
+  background: #0b0f19;
+  color: #cbd5e1;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow: auto;
+  max-height: 360px;
+  white-space: pre-wrap;
+}
+
+/* Stats */
+.camera-management .stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.camera-management .stat {
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 20px;
+  text-align: center;
+}
+
+.camera-management .stat-value {
+  font-size: 32px;
+  font-weight: bold;
+  color: #667eea;
+  margin-bottom: 8px;
+}
+
+.camera-management .stat-label {
+  font-size: 14px;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* Cameras List */
+.camera-management .cameras-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 20px;
+}
+
+.camera-management .camera-card {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border: 1px solid #333;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.camera-management .camera-card:hover {
+  border-color: #667eea;
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.2);
+  transform: translateY(-2px);
+}
+
+.camera-management .camera-card.disabled {
+  opacity: 0.6;
+  border-color: #444;
+}
+
+.camera-management .card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 16px;
+  border-bottom: 1px solid #333;
+  background: rgba(102, 126, 234, 0.05);
+}
+
+.camera-management .camera-info {
+  flex: 1;
+}
+
+.camera-management .camera-info h3 {
+  margin: 0 0 4px 0;
+  color: #fff;
+  font-size: 18px;
+}
+
+.camera-management .stream-id {
+  margin: 0;
+  color: #999;
+  font-size: 13px;
+  font-family: monospace;
+}
+
+.camera-management .status-badge {
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.camera-management .status-badge.active {
+  background: rgba(34, 197, 94, 0.2);
+  color: #86efac;
+}
+
+.camera-management .status-badge.inactive {
+  background: rgba(168, 85, 247, 0.2);
+  color: #d8b4fe;
+}
+
+.camera-management .card-body {
+  padding: 16px;
+  flex: 1;
+}
+
+.camera-management .field {
+  margin-bottom: 12px;
+}
+
+.camera-management .field:last-child {
+  margin-bottom: 0;
+}
+
+.camera-management .field label {
+  display: block;
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.camera-management .field p,
+.camera-management .field code {
+  margin: 0;
+  color: #ccc;
+  font-size: 14px;
+}
+
+.camera-management .field code {
+  background: #0f0f0f;
+  padding: 8px;
+  border-radius: 4px;
+  display: block;
+  font-family: monospace;
+  overflow-x: auto;
+  word-break: break-all;
+}
+
+.camera-management .field.timestamps {
+  font-size: 12px;
+  color: #777;
+  border-top: 1px solid #333;
+  padding-top: 12px;
+  margin-top: 12px;
+}
+
+/* Card Actions */
+.camera-management .card-actions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid #333;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.camera-management .btn-toggle,
+.camera-management .btn-edit,
+.camera-management .btn-delete {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.camera-management .btn-toggle.enable {
+  background: #10b981;
+  color: white;
+}
+
+.camera-management .btn-toggle.enable:hover {
+  background: #059669;
+}
+
+.camera-management .btn-toggle.disable {
+  background: #f59e0b;
+  color: white;
+}
+
+.camera-management .btn-toggle.disable:hover {
+  background: #d97706;
+}
+
+.camera-management .btn-edit {
+  background: #667eea;
+  color: white;
+}
+
+.camera-management .btn-edit:hover {
+  background: #5568d3;
+}
+
+.camera-management .btn-delete {
+  background: #ef4444;
+  color: white;
+}
+
+.camera-management .btn-delete:hover {
+  background: #dc2626;
+}
+
+/* Empty State */
+.camera-management .empty-state {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 60px 20px;
+  color: #777;
+}
+
+.camera-management .empty-state p {
+  font-size: 16px;
+  margin: 10px 0;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .camera-management .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .camera-management .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .camera-management .cameras-list {
+    grid-template-columns: 1fr;
+  }
+
+  .camera-management .card-actions {
+    flex-direction: column;
+  }
+
+  .camera-management .stats {
+    grid-template-columns: 1fr;
+  }
+}

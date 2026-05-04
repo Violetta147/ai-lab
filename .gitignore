@@ -1,0 +1,100 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Model files (large)
+*.pt
+*.pth
+*.onnx
+*.engine
+*.pb
+*.tflite
+*.h5
+*.weights
+*.ckpt
+*.bin
+
+# Datasets
+datasets/
+*.zip
+*.tar
+*.tar.gz
+
+# Large media artifacts
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# Logs and outputs
+logs/
+runs/
+results/
+output/
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Build artifacts
+*.o
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Node modules (if applicable)
+node_modules/
+
+# Environment variables
+.env
+.env.local
+
+# VS Code workspace settings (optional - uncomment if you want to exclude)
+# .vscode/settings.json
+# .vscode/launch.json

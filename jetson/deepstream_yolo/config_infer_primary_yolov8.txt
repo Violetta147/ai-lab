@@ -1,0 +1,43 @@
+[property]
+gpu-id=0
+net-scale-factor=0.00392156862745098
+model-color-format=0
+onnx-file=/root/deepstream_yolo/best_deepstream.onnx
+model-engine-file=/root/deepstream_yolo/best_deepstream.onnx_b1_gpu0_fp16.engine
+labelfile-path=/root/deepstream_yolo/labels.txt
+batch-size=1
+network-mode=2
+num-detected-classes=4
+interval=2
+gie-unique-id=1
+process-mode=1
+network-type=0
+cluster-mode=2
+maintain-aspect-ratio=1
+symmetric-padding=1
+parse-bbox-func-name=NvDsInferParseYolo
+custom-lib-path=/root/deepstream_yolo/libnvdsinfer_custom_impl_Yolo.so
+
+## Class 0: bus
+[class-attrs-0]
+pre-cluster-threshold=0.25
+nms-iou-threshold=0.45
+topk=50
+
+## Class 1: car
+[class-attrs-1]
+pre-cluster-threshold=0.25
+nms-iou-threshold=0.45
+topk=100
+
+## Class 2: motor (lower threshold for small objects)
+[class-attrs-2]
+pre-cluster-threshold=0.20
+nms-iou-threshold=0.45
+topk=100
+
+## Class 3: truck
+[class-attrs-3]
+pre-cluster-threshold=0.25
+nms-iou-threshold=0.45
+topk=50
