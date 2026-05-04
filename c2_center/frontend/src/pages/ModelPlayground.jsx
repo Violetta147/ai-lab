@@ -63,7 +63,7 @@ export default function ModelPlayground() {
       const data = await res.json();
       setResultImage(`data:image/jpeg;base64,${data.image}`);
       setInfo(
-        `${data.detections_count} detections — model: ${data.model} — iou: ${data.used_iou} — class: ${data.resolved_class_filter ?? 'all'} — nms: ${data.before_nms_count}->${data.after_nms_count}`
+        `${data.detections_count} detections — model: ${data.model} — iou: ${data.used_iou} — class: ${data.resolved_class_filter ?? 'all'}`
       );
     } catch (e) {
       setInfo(`Error: ${e.message}`);

@@ -29,46 +29,6 @@ def _normalize_01(value: float, default: float) -> float:
     return max(0.0, min(1.0, v))
 
 
-def _apply_overlap_nms(detections: sv.Detections, overlap: float) -> sv.Detections:
-    """Apply an explicit class-agnostic NMS pass using the overlap slider value.
-
-    This guarantees that the playground overlap control has deterministic impact,
-    independent of model-side NMS implementation details.
-    """
-    if len(detections) == 0:
-        return detections
-
-    if detections.confidence is None:
-        return detections
-
-    boxes_xyxy = detections.xyxy
-    scores = detections.confidence.astype(float).tolist()
-
-    boxes_xywh = []
-    for box in boxes_xyxy:
-        x1, y1, x2, y2 = [float(v) for v in box]
-        boxes_xywh.append([x1, y1, max(0.0, x2 - x1), max(0.0, y2 - y1)])
-
-    indices = cv2.dnn.NMSBoxes(
-        bboxes=boxes_xywh,
-        scores=scores,
-        score_threshold=0.0,
-        nms_threshold=float(overlap),
-    )
-
-    if indices is None or len(indices) == 0:
-        return detections[[]]
-
-    keep = []
-    for idx in indices:
-        if isinstance(idx, (list, tuple, np.ndarray)):
-            keep.append(int(idx[0]))
-        else:
-            keep.append(int(idx))
-
-    return detections[np.array(keep, dtype=int)]
-
-
 def get_router(model_registry):
     @router.post("/detect")
     async def detect(
@@ -110,14 +70,14 @@ def get_router(model_registry):
         opacity = _normalize_01(opacity, 0.6)
 
         # Prepare classes filter for YOLO (None or list[int])
-        classes_arg = None
+        class_filter_list = None
         resolved_class_filter = "all"
         class_filter_value = "" if class_filter is None else str(class_filter).strip()
         if class_filter_value.lower() not in ("all", "all classes", ""):
             # Try numeric class id first
             try:
                 class_id = int(class_filter_value)
-                classes_arg = [class_id]
+                class_filter_list = [class_id]
                 resolved_class_filter = str(class_id)
             except Exception:
                 # Treat class_filter as label name; map to class id using model registry
@@ -126,17 +86,16 @@ def get_router(model_registry):
                     # Exact match first, then case-insensitive
                     if class_filter_value in labels:
                         class_id = labels.index(class_filter_value)
-                        classes_arg = [class_id]
+                        class_filter_list = [class_id]
                         resolved_class_filter = str(class_id)
                     else:
                         lower_labels = [l.lower() for l in labels]
                         lowered = class_filter_value.lower()
                         if lowered in lower_labels:
                             class_id = lower_labels.index(lowered)
-                            classes_arg = [class_id]
+                            class_filter_list = [class_id]
                             resolved_class_filter = str(class_id)
                 except Exception:
-                    classes_arg = None
                     resolved_class_filter = "all"
 
         logger.info(
@@ -153,26 +112,52 @@ def get_router(model_registry):
 
         # Run inference in thread pool
         def _infer():
-            # Pass classes list to YOLO if provided
-            predict_kwargs = {
-                "conf": float(confidence),
-                # Keep model-side NMS permissive; overlap control is applied
-                # explicitly below for deterministic UI behavior.
-                "iou": 0.99,
-                "agnostic_nms": True,
-                "verbose": False,
-            }
-            # Always send classes explicitly so "all" does not inherit
-            # class filters from previous requests.
-            predict_kwargs["classes"] = classes_arg
 
-            logger.info("Playground predict kwargs: %s", predict_kwargs)
-
-            results = model.predict(image, **predict_kwargs)[0]
+            # Note: YOLO's predict() 'iou' parameter may not apply NMS correctly in some versions.
+            # We apply NMS manually using OpenCV's built-in function.
+            results = model.predict(image, conf=confidence, classes=class_filter_list, verbose=False)[0]
             detections = sv.Detections.from_ultralytics(results)
-            before_nms_count = len(detections)
-            detections = _apply_overlap_nms(detections, iou_threshold)
-            after_nms_count = len(detections)
+            
+            logger.info("Detection results BEFORE manual NMS: %d boxes (conf=%s)", 
+                       len(detections), confidence)
+            
+            # Apply NMS manually using OpenCV if there are detections
+            if len(detections) > 0:
+                boxes = detections.xyxy.astype(np.float32)
+                scores = detections.confidence
+                
+                # Convert xyxy to xywh format for NMS
+                boxes_xywh = []
+                for x1, y1, x2, y2 in boxes:
+                    w = x2 - x1
+                    h = y2 - y1
+                    boxes_xywh.append([x1, y1, w, h])
+                
+                # Apply NMS per class
+                keep_indices = []
+                for class_id in np.unique(detections.class_id):
+                    class_mask = detections.class_id == class_id
+                    class_indices = np.where(class_mask)[0]
+                    class_boxes = [boxes_xywh[i] for i in class_indices]
+                    class_scores = scores[class_indices].tolist()
+                    
+                    if len(class_boxes) > 0:
+                        # Use OpenCV NMS
+                        nms_indices = cv2.dnn.NMSBoxes(class_boxes, class_scores, 0.0, iou_threshold)
+                        nms_indices = nms_indices.flatten().tolist() if len(nms_indices) > 0 else []
+                        # Map back to global indices
+                        keep_indices.extend([class_indices[i] for i in nms_indices])
+                
+                # Filter detections to keep only NMS-approved boxes
+                keep_indices = sorted(keep_indices)
+                if len(keep_indices) > 0:
+                    detections = detections[np.array(keep_indices)]
+                else:
+                    detections = sv.Detections.empty()
+                
+                logger.info("Detection results AFTER manual NMS: %d boxes (iou=%s)", 
+                           len(detections), iou_threshold)
+
             out = image.copy()
 
             if censor:
@@ -210,21 +195,9 @@ def get_router(model_registry):
                     out = overlay
 
             _, buf = cv2.imencode(".jpg", out, [cv2.IMWRITE_JPEG_QUALITY, 90])
-            class_counts = {}
-            if detections.class_id is not None:
-                for cls in detections.class_id:
-                    cid = int(cls)
-                    class_counts[cid] = class_counts.get(cid, 0) + 1
+            return base64.b64encode(buf).decode("utf-8"), len(detections)
 
-            return (
-                base64.b64encode(buf).decode("utf-8"),
-                len(detections),
-                before_nms_count,
-                after_nms_count,
-                class_counts,
-            )
-
-        b64, count, before_nms_count, after_nms_count, class_counts = await asyncio.to_thread(_infer)
+        b64, count = await asyncio.to_thread(_infer)
 
         return {
             "image": b64,
@@ -234,9 +207,6 @@ def get_router(model_registry):
             "used_confidence": confidence,
             "used_opacity": opacity,
             "resolved_class_filter": resolved_class_filter,
-            "before_nms_count": before_nms_count,
-            "after_nms_count": after_nms_count,
-            "class_counts": class_counts,
         }
 
     return router
