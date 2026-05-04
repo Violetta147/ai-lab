@@ -13,7 +13,7 @@ Three major features are analyzed for their current implementation state and int
 3. **Kafka-Jetson-DeepStream Integration** — Metadata synchronization (incomplete, tracker metadata missing)
 
 **Key Issues**:
-- Playground lacks video inference and tracker metadata pipeline
+- Playground lacks video inference; any future tracking there should be an offline/batch workflow, not live DeepStream tracking
 - Deep Analysis has incomplete algorithm implementations and missing tracker dependency validation
 - Kafka integration missing tracking_id propagation and error handling
 - Analytics algorithms don't receive labels_map or required metadata
@@ -31,10 +31,10 @@ Three major features are analyzed for their current implementation state and int
 - Model selection and confidence/overlap tuning
 
 **Limitations Identified**:
-- ❌ No video file inference support
-- ❌ No tracker metadata integration (tracker_id not available)
+- ❌ No video file inference support yet
+- ❌ No live tracker metadata integration by design; Playground should stay independent from DeepStream
 - ❌ Runs locally; does not consume Kafka messages
-- ❌ No streaming capability for batch video processing
+- ❌ No batch video processing path yet
 
 **Current Flow**:
 ```
@@ -46,9 +46,14 @@ POST /api/playground/detect (image file)
 ```
 
 **What's Missing**:
-- Video frame decoding loop
-- Tracker ID extraction from DeepStream (if needed)
-- Batch inference mode
+- Video frame decoding loop for offline uploads
+- Optional local tracking pass for video mode only
+- Batch inference mode with per-frame annotation
+
+**Important Separation**:
+- Playground video tracking should be a separate offline feature
+- It should not depend on Kafka, WebSocket live sync, or DeepStream metadata
+- Deep Analysis remains the live real-time tracking path fed by DeepStream JSON
 
 ---
 
@@ -59,10 +64,11 @@ POST /api/playground/detect (image file)
 - Per-stream algorithm switching via REST API
 - Zone/ROI configuration (polygons, lines)
 - Real-time metrics broadcast via WebSocket
+- Designed to consume DeepStream/Kafka metadata from the second laptop running WSL2
 
 **Limitations Identified**:
 - ❌ **Critical**: `fundamental_equation.py` is incomplete (method ends abruptly ~line 82)
-- ❌ **Critical**: Tracker metadata (`tracker_id`) is required but validation missing
+- ❌ **Critical**: Tracker metadata (`tracker_id`) is required but validation is still too loose
 - ❌ Analytics algorithms receive `detections` but **no `labels_map`** parameter passed
 - ❌ Zone store is in-memory only (no persistence across restarts)
 - ❌ No error handling if Kafka is offline (metrics broadcast becomes all zeros)
@@ -325,7 +331,18 @@ User uploads image → playground.py:detect()
   → sv.Detections.from_ultralytics()
   → BoxAnnotator + LabelAnnotator
   → return base64 + count
-  ❌ No Kafka integration, no tracker metadata
+   ❌ No Kafka integration, no live tracker metadata
+```
+
+### Playground Feature (Video, planned)
+```
+User uploads video → playground batch processor
+   → decode frames locally
+   → optional lightweight local tracking for offline review only
+   → annotate each frame with YOLO + Supervision
+   → return video preview / frame sequence
+   ❌ No DeepStream dependency
+   ❌ No Kafka sync dependency
 ```
 
 ### Deep Analysis Feature (Video Stream)
@@ -394,10 +411,10 @@ Match? |0.123 - 0.087| = 0.036 < 0.050 ✓
 
 ### Phase 1: Fix Critical Failures (Today)
 
-1. **Fix Tracker Metadata Loss** [2 hours]
+1. **Lock Down Deep Analysis Tracking Path** [2 hours]
    - Verify DeepStream Kafka payload includes `tracking_id`
    - Add validation in `metadata_to_detections()` to log missing tracker IDs
-   - Add fallback: if all tracker_ids are -1, log warning and disable tracking-dependent analyzers
+   - Keep tracking-dependent analyzers isolated from Playground logic
    - **Files**: `backend/ws/streamer.py`, `deepstream/multi-stream/cfg_kafka.txt`
 
 2. **Complete fundamental_equation.py** [1 hour]
@@ -419,11 +436,11 @@ Match? |0.123 - 0.087| = 0.036 < 0.050 ✓
    - Add frontend banner warning if offline
    - **Files**: `backend/api/streams.py`, `frontend/src/components/*`
 
-5. **Implement Video Inference in Playground** [3 hours]
+5. **Implement Offline Video Mode in Playground** [3 hours]
    - Add video file handling to `playground.py`
-   - Support batch frame processing
-   - Optionally consume Kafka metadata per frame
-   - **Files**: `backend/api/playground.py`, `backend/services/sync_engine.py`
+   - Support batch frame processing with optional local tracker
+   - Keep it separate from DeepStream/Kafka live tracking
+   - **Files**: `backend/api/playground.py`, `backend/services/video_reader.py`
 
 6. **Persist Zone Configuration** [2 hours]
    - Replace in-memory `zone_store` with SQLite table
@@ -446,6 +463,7 @@ Match? |0.123 - 0.087| = 0.036 < 0.050 ✓
 
 ### ✓ Working
 - [x] Playground image inference (local YOLO)
+- [x] Playground detection controls and per-class NMS
 - [x] WebSocket frame broadcasting (15 FPS)
 - [x] Zone storage (in-memory)
 - [x] Model registry & lazy loading
@@ -457,6 +475,7 @@ Match? |0.123 - 0.087| = 0.036 < 0.050 ✓
 - [~] Sync engine (tolerance window OK, but clock drift risk)
 - [~] Deep analysis (algorithms registered, but missing dependencies)
 - [~] Line crossing analyzer (no fallback if tracker missing)
+- [~] Playground video mode (planned as offline batch processing)
 
 ### ❌ Broken
 - [x] Fundamental equation analyzer (incomplete code)
@@ -477,6 +496,7 @@ Match? |0.123 - 0.087| = 0.036 < 0.050 ✓
 | Kafka broker offline (silent failure) | **MEDIUM** | **MEDIUM** | Add health check, frontend warning, fallback mode |
 | fundamental_equation incomplete | **HIGH** | **HIGH** | Complete implementation immediately |
 | Labels not passed to analyzers | **MEDIUM** | **HIGH** | Pass labels_map in zone_params dict |
+| Conflating Playground video tracking with Deep Analysis live tracking | **MEDIUM** | **HIGH** | Keep offline Playground video mode separate from DeepStream/Kafka pipeline |
 
 ---
 

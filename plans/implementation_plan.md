@@ -71,13 +71,117 @@ Model labels (3 classes): `car`, `motor`, `heavy_vehicle`
 > - **DeepStream (Edge)**: Model `.engine` + `labels.txt` được quản lý qua SSH vào WSL2 container. Hardcoded path trong config.
 > - **C2 Backend (Server)**: Model `.pt`/`.onnx` + `labels.txt` **KHÔNG hardcode**. Backend scan thư mục `models/` tự động, cung cấp API để Frontend chọn model.
 
+> **Phân tách tracking**: Playground video tracking là luồng offline/batch riêng, còn Deep Analysis là luồng live real-time từ DeepStream edge AI. Hai luồng này không dùng chung metadata pipeline.
+
+---
+
+### Phase 2: DeepStream Pipeline (Edge AI — WSL2 on Laptop 2)
+
+> [!IMPORTANT]
+> Giữ đơn giản — theo đúng pattern [setup_yolo26_model.sh](file:///d:/datas/Final.yolov8/deepstream_app/single-stream/setup_yolo26_model.sh). Chỉ thêm: multi-source + Kafka sink thay RTSP sink.
+
+#### Môi trường đã xác nhận
+
+- Docker image: `nvcr.io/nvidia/deepstream:6.0.1-devel`
+- Docker run command: theo [my_guidebook.txt](file:///d:/datas/Final.yolov8/deepstream_app/single-stream/my_guidebook.txt) (lines 68-77)
+- Parser: `libnvdsinfer_custom_impl_Yolo26.so` (built từ [DeepStream-Yolo](file:///d:/datas/Final.yolov8/jetson/DeepStream-Yolo) repo, CUDA_VER=11.4)
+- Model: `yolo_all_exports_p2n_fine-tuning2_best.engine` (3 classes, 640x640)
+- Laptop 2 WSL2 đã sẵn sàng để chạy DeepStream, Kafka sink, và tracker metadata JSON
+
+#### [NEW] `c2_center/deepstream/multi-stream/setup_c2_multistream.sh`
+
+Mở rộng từ `setup_yolo26_model.sh` proven pattern. Thay đổi chính:
+
+**1. Thêm N sources** (giữ cấu trúc [sourceN] y hệt single-stream):
+```ini
+[source0]
+enable=1
+type=4
+uri=rtsp://192.168.1.196:8554/cam1
+gpu-id=0
+select-rtp-protocol=4
+latency=150
+rtsp-reconnect-interval-sec=5
+
+[source1]
+enable=1
+type=4
+uri=rtsp://192.168.1.196:8556/cam2
+...
+```
+
+**2. batch-size = N** (khớp số source):
+```ini
+[streammux]
+batch-size=2    # = số source
+width=640
+height=640
+```
+
+**3. Thay [sink0] type=4 (RTSP) → type=6 (Message Broker)**:
+```ini
+[sink0]
+enable=1
+type=6
+msg-conv-config=nvmsgconv_c2_config.txt
+msg-conv-payload-type=256
+msg-conv-msg2p-lib=libnvds_msgconv_c2.so
+msg-broker-proto-lib=/opt/nvidia/deepstream/deepstream-6.0/lib/libnvds_kafka_proto.so
+msg-broker-conn-str=192.168.1.196;9092;c2_metadata
+
+[sink1]
+enable=1
+type=1      # fakesink
+```
+
+**4. Pipeline Optimization** (tối ưu toàn pipeline, không chỉ fakesink):
+
+| Optimization | Config | Lý do |
+|---|---|---|
+| **OSD tắt** | `[osd] enable=0` | Không cần vẽ bbox trên Edge — Backend vẽ bằng Supervision |
+| **Inference interval** | `interval=2` (giữ từ single-stream) | AI mỗi 3 frame, tracker fill gaps |
+| **Tiled-display tắt** | `[tiled-display] enable=0` | Không render grid trên Edge |
+| **Sync tắt** | `[sink0] sync=0` | Không chờ real-time clock, xử lý nhanh nhất có thể |
+| **Streammux buffer** | `batched-push-timeout=40000` | Giữ từ single-stream, đủ cho 2+ sources |
+| **GStreamer cache** | `rm -rf ~/.cache/gstreamer-1.0/` | Clear stale plugin cache trước mỗi lần chạy |
+| **DISPLAY unset** | `unset DISPLAY` | Tránh X11 overhead trong WSL2 headless |
+| **enc-type skip** | Không cần encoder vì output = text JSON | Tiết kiệm GPU encode cycle |
+
+> [!TIP]
+> So với single-stream hiện tại (RTSP output cần encoder + OSD), pipeline C2 **nhẹ hơn đáng kể** vì chỉ xuất text JSON. Dự kiến FPS cao hơn 20-30% với cùng phần cứng.
+
+**5. Giữ nguyên** tracker/primary-gie từ single-stream config.
+
+#### [NEW] `c2_center/deepstream/multi-stream/nvmsgconv_c2/`
+
+Custom C++ payload generator cho đúng JSON schema:
+
+```cpp
+// c2_payload.cpp — implements nvds_msg2p interface
+// Extracts from NvDsFrameMeta + NvDsObjectMeta:
+//   - stream_id  ← frame_meta->pad_index → "cam_8554"
+//   - frame_id   ← frame_meta->frame_num
+//   - timestamp  ← frame_meta->buf_pts (nanosec → sec)
+//   - objects[]  ← iterate obj_meta_list:
+//       tracking_id ← obj_meta->object_id
+//       class_id    ← obj_meta->class_id
+//       class_name  ← lookup from labels.txt
+//       bbox        ← obj_meta->rect_params {left,top,width,height}
+//       confidence  ← obj_meta->confidence
+```
+
+Build: `make` → `libnvds_msgconv_c2.so`, copy vào workspace.
+
 ---
 
 ## Cấu Trúc Thư Mục
+> **Playground video mode**: batch/offline; nếu có tracking thì đó là local tracking riêng, không dùng Kafka/DeepStream live metadata.
+
+> **Deep Analysis**: nhận video live từ WebSocket + DeepStream/Kafka, không phụ thuộc vào Playground video mode.
 
 ```
-c2_center/
-├── docker-compose.yml              # Kafka + Zookeeper
+│   [Drop files here]     │  Confidence  ───●──── 25%  │
+│   image, video          │  Overlap     ───●──── 45%  │
 │
 ├── infrastructure/
 │   ├── mediamtx.yml                # MediaMTX multi-path config

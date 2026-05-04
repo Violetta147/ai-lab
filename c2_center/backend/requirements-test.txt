@@ -1,4 +1,0 @@
-loguru
-websockets
-aiohttp
-requests
