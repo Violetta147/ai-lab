@@ -1,0 +1,10 @@
+model_path: yolo26n.pt
+device: ''
+imgsz: 640
+speed_up: 2.0
+global_pruning: true
+iterative_steps: 200
+prune_method: lamp
+round_to: 32
+data: ul://violet/datasets/work3yolov8
+cfg_path: default.yaml
