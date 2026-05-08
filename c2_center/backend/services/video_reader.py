@@ -57,6 +57,10 @@ class VideoReaderService:
         reconnect_delay = 1.0
 
         while self._running:
+            if stream_id not in self.queues:
+                logger.info("[%s] Stream removed, stopping reader loop", stream_id)
+                break
+
             try:
                 # Connect
                 if cap is None or not cap.isOpened():
@@ -163,5 +167,6 @@ class VideoReaderService:
 
         # Mark the queue for cleanup
         self.queues.pop(stream_id, None)
+        self._threads.pop(stream_id, None)
         logger.info("Stream marked for removal: %s (will stop on next cycle)", stream_id)
         return True

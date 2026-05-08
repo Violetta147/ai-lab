@@ -23,7 +23,31 @@ set -euo pipefail
 LAPTOP_A_IP="${LAPTOP_A_IP:-192.168.1.196}"
 NUM_SOURCES="${NUM_SOURCES:-2}"
 WORK_DIR="${WORK_DIR:-/workspace/deepstream_yolo26}"
-DS_DIR="${DS_DIR:-/opt/nvidia/deepstream/deepstream-6.0}"
+
+resolve_ds_dir() {
+    if [ -n "${DS_DIR:-}" ] && [ -d "${DS_DIR}" ]; then
+        echo "${DS_DIR}"
+        return 0
+    fi
+
+    for candidate in \
+        /opt/nvidia/deepstream/deepstream-6.0.1-devel \
+        /opt/nvidia/deepstream/deepstream-6.0.1 \
+        /opt/nvidia/deepstream/deepstream-6.0; do
+        if [ -d "${candidate}" ]; then
+            echo "${candidate}"
+            return 0
+        fi
+    done
+
+    echo "/opt/nvidia/deepstream/deepstream-6.0"
+}
+
+DS_DIR="$(resolve_ds_dir)"
+SAMPLES_DIR="${DS_DIR}/samples"
+if [ ! -d "${SAMPLES_DIR}" ] && [ -d "/opt/nvidia/deepstream/deepstream-6.0/samples" ]; then
+    SAMPLES_DIR="/opt/nvidia/deepstream/deepstream-6.0/samples"
+fi
 
 # Model files (same as single-stream)
 MODEL_NAME="${MODEL_NAME:-yolo_all_exports_p2n_fine-tuning2_best}"
@@ -167,7 +191,7 @@ tracker-width=640
 tracker-height=384
 gpu-id=0
 ll-lib-file=${DS_DIR}/lib/libnvds_nvmultiobjecttracker.so
-ll-config-file=${DS_DIR}/samples/configs/deepstream-app/config_tracker_NvDCF_perf.yml
+ll-config-file=${SAMPLES_DIR}/configs/deepstream-app/config_tracker_NvDCF_perf.yml
 enable-past-frame=1
 display-tracking-id=1
 

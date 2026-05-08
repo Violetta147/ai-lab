@@ -1,0 +1,14 @@
+# nvmsgconv config for C2 Center
+# This file configures the nvmsgconv plugin to include the custom payload builder
+# and to set payload type and other options.
+
+[property]
+# payload type 256 = custom
+payload-type=256
+
+[custom]
+# path to the msg2p shared library; DeepStream loads this and calls the
+# implemented interface to build the JSON payload
+msg2p-lib=libnvds_msgconv_c2.so
+
+# Additional options can be added here if needed

@@ -30,6 +30,9 @@ class FundamentalEquationAnalyzer(BaseAnalyzer):
         self._entry_tracker: dict[int, float] = {}  # tracking_id -> entry_time
         self._speeds: deque = deque(maxlen=100)  # recent speed measurements
         self._total_crossed = 0
+        # Local lightweight tracker used when no tracker_id is provided by DeepStream
+        self._local_tracks: dict[int, dict] = {}  # id -> {pos, last_seen, entered_time, active}
+        self._local_next_id = 1
 
     def reset(self):
         self._entry_events.clear()
@@ -55,19 +58,27 @@ class FundamentalEquationAnalyzer(BaseAnalyzer):
         entry_p1, entry_p2 = tuple(entry_line[0]), tuple(entry_line[1])
         exit_p1, exit_p2 = tuple(exit_line[0]), tuple(exit_line[1])
 
-        # Check line crossings for each tracked vehicle
-        if detections.tracker_id is not None:
-            for i, trk_id in enumerate(detections.tracker_id):
+        # Check line crossings for each tracked vehicle. If tracker IDs are missing,
+        # fall back to a lightweight local matcher that attempts to associate centroids
+        # across frames for short-lived tracks.
+        entry_y = (entry_p1[1] + entry_p2[1]) // 2
+        exit_y = (exit_p1[1] + exit_p2[1]) // 2
+
+        tracker_ids = None
+        try:
+            tracker_ids = detections.tracker_id if hasattr(detections, "tracker_id") else None
+        except Exception:
+            tracker_ids = None
+
+        if tracker_ids is not None and tracker_ids.size > 0 and int(tracker_ids.max()) != -1:
+            # Use provided tracker IDs
+            for i, trk_id in enumerate(tracker_ids):
                 trk_id = int(trk_id)
                 if trk_id == -1:
                     continue
                 bbox = detections.xyxy[i]
                 cx = int((bbox[0] + bbox[2]) / 2)
                 cy = int((bbox[1] + bbox[3]) / 2)
-
-                # Check entry line crossing (simple y-threshold)
-                entry_y = (entry_p1[1] + entry_p2[1]) // 2
-                exit_y = (exit_p1[1] + exit_p2[1]) // 2
 
                 if trk_id not in self._entry_tracker:
                     if abs(cy - entry_y) < 15:
@@ -84,6 +95,62 @@ class FundamentalEquationAnalyzer(BaseAnalyzer):
                                     self._speeds.append(speed)
                             self._exit_events.append(now)
                             self._total_crossed += 1
+        else:
+            # Local matching fallback (centroid nearest-neighbor within short time window)
+            centroids = []
+            for i in range(len(detections)):
+                bbox = detections.xyxy[i]
+                cx = int((bbox[0] + bbox[2]) / 2)
+                cy = int((bbox[1] + bbox[3]) / 2)
+                centroids.append((cx, cy))
+
+            # Try to match centroids to existing local tracks
+            matched = set()
+            for cid, (cx, cy) in enumerate(centroids):
+                matched_id = None
+                best_dist = 1e9
+                for tid, info in list(self._local_tracks.items()):
+                    dist = (info["pos"][0] - cx) ** 2 + (info["pos"][1] - cy) ** 2
+                    if dist < best_dist and (now - info["last_seen"]) < 2.0:
+                        best_dist = dist
+                        matched_id = tid
+
+                if matched_id is None:
+                    # Create new local track
+                    tid = self._local_next_id
+                    self._local_next_id += 1
+                    self._local_tracks[tid] = {"pos": (cx, cy), "last_seen": now, "entered_time": None, "active": True}
+                    matched_id = tid
+                else:
+                    # Update existing
+                    self._local_tracks[matched_id]["pos"] = (cx, cy)
+                    self._local_tracks[matched_id]["last_seen"] = now
+
+                matched.add(matched_id)
+
+                info = self._local_tracks[matched_id]
+                # entry
+                if info["entered_time"] is None and abs(cy - entry_y) < 15:
+                    info["entered_time"] = now
+                    self._entry_events.append(now)
+                # exit
+                elif info["entered_time"] is not None and abs(cy - exit_y) < 15:
+                    entry_time = info["entered_time"]
+                    if entry_time:
+                        dt = now - entry_time
+                        if dt > 0.1:
+                            speed = (line_distance_km / dt) * 3600
+                            if 1 < speed < 250:
+                                self._speeds.append(speed)
+                        self._exit_events.append(now)
+                        self._total_crossed += 1
+                    # reset the local track so it can be reused
+                    info["entered_time"] = None
+
+            # Purge stale local tracks
+            stale = [k for k, v in self._local_tracks.items() if now - v["last_seen"] > 5]
+            for k in stale:
+                del self._local_tracks[k]
 
         # Purge old events outside sliding window
         cutoff = now - WINDOW_SEC

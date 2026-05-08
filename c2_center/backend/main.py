@@ -37,7 +37,7 @@ from services.sync_engine import SyncEngine
 from services.video_reader import VideoReaderService
 from services.camera_db import camera_db
 from ws.streamer import StreamProcessor
-from api.zones import zone_store
+from services.zone_db import zone_store
 
 # --- Logging ---
 logging.basicConfig(
@@ -127,7 +127,7 @@ from api.models_api import get_router as models_router
 from api.playground import get_router as playground_router
 from api.mediamtx import router as mediamtx_router
 
-app.include_router(streams_router(sync_engine))
+app.include_router(streams_router(sync_engine, kafka_consumer))
 app.include_router(cameras_router(video_reader))
 app.include_router(zones_router)
 app.include_router(analytics_router(stream_processor))

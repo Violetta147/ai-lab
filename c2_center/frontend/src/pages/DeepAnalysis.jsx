@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import PolygonDrawer from '../components/PolygonDrawer';
 import TrafficChart from '../components/TrafficChart';
 import { useWebSocket, apiFetch } from '../hooks/useWebSocket';
@@ -21,6 +21,7 @@ export default function DeepAnalysis() {
   const [frame, setFrame] = useState(null);
   const [stats, setStats] = useState({});
   const [chartData, setChartData] = useState([]);
+  const [health, setHealth] = useState(null);
 
   useEffect(() => {
     apiFetch('/api/streams')
@@ -35,11 +36,26 @@ export default function DeepAnalysis() {
       });
   }, []);
 
+  useEffect(() => {
+    let timer;
+    const pollHealth = async () => {
+      try {
+        const data = await apiFetch('/api/health');
+        setHealth(data);
+      } catch (e) {
+        setHealth({ status: 'error', kafka_connected: false, error: e.message });
+      }
+    };
+    pollHealth();
+    timer = setInterval(pollHealth, 5000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Video WS
   const handleVideoMsg = useCallback((msg) => {
     if (msg.type === 'frame') setFrame(`data:image/jpeg;base64,${msg.data}`);
   }, []);
-  useWebSocket(activeStream ? `/ws/stream/${activeStream}` : null, {
+  const videoSocket = useWebSocket(activeStream ? `/ws/stream/${activeStream}` : null, {
     onMessage: handleVideoMsg, enabled: !!activeStream,
   });
 
@@ -57,9 +73,12 @@ export default function DeepAnalysis() {
       });
     }
   }, []);
-  useWebSocket(activeStream ? `/ws/stats/${activeStream}` : null, {
+  const statsSocket = useWebSocket(activeStream ? `/ws/stats/${activeStream}` : null, {
     onMessage: handleStatsMsg, enabled: !!activeStream,
   });
+
+  const videoStatus = videoSocket.status;
+  const statsStatus = statsSocket.status;
 
   // Switch algorithm
   const switchAlgo = async (slug) => {
@@ -99,6 +118,16 @@ export default function DeepAnalysis() {
   return (
     <div className="split-layout">
       <div className="split-main">
+        {health && (!health.kafka_connected || health.status !== 'ok') && (
+          <div className="glass-card" style={{ marginBottom: 12, padding: '10px 14px', border: '1px solid rgba(239, 68, 68, 0.35)', color: 'var(--accent-red)' }}>
+            Live pipeline warning: {health.kafka_connected ? 'Kafka connected but backend reports a degraded state' : 'Kafka / DeepStream feed is not connected'}
+          </div>
+        )}
+        {(videoStatus !== 'connected' || statsStatus !== 'connected') && (
+          <div className="glass-card" style={{ marginBottom: 12, padding: '10px 14px', border: '1px solid rgba(245, 158, 11, 0.35)', color: 'var(--accent-amber)' }}>
+            WebSocket status: video={videoStatus}, stats={statsStatus}
+          </div>
+        )}
         {/* Video + Canvas overlay */}
         <div className="glass-card video-canvas-container" style={{ flex: 1 }}>
           {frame ? <img src={frame} alt="stream" /> : (

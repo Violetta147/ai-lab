@@ -14,10 +14,29 @@ const DEFAULT_SETTINGS = {
   censor: false,
 };
 
+function base64ToBlob(base64, mimeType) {
+  const sliceSize = 1024 * 1024;
+  const byteCharacters = atob(base64);
+  const byteArrays = [];
+
+  for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+    const slice = byteCharacters.slice(offset, offset + sliceSize);
+    const byteNumbers = new Array(slice.length);
+    for (let i = 0; i < slice.length; i += 1) {
+      byteNumbers[i] = slice.charCodeAt(i);
+    }
+    byteArrays.push(new Uint8Array(byteNumbers));
+  }
+
+  return new Blob(byteArrays, { type: mimeType });
+}
+
 export default function ModelPlayground() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [file, setFile] = useState(null);
   const [resultImage, setResultImage] = useState(null);
+  const [resultVideo, setResultVideo] = useState(null);
+  const [resultVideoUrl, setResultVideoUrl] = useState(null);
   const [loading, setLoading] = useState(false);
   const [info, setInfo] = useState(null);
   const [models, setModels] = useState([]);
@@ -30,10 +49,23 @@ export default function ModelPlayground() {
     }).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (resultVideoUrl) {
+        URL.revokeObjectURL(resultVideoUrl);
+      }
+    };
+  }, [resultVideoUrl]);
+
   const handleDetect = async () => {
     if (!file) return;
     setLoading(true);
     setResultImage(null);
+    setResultVideo(null);
+    if (resultVideoUrl) {
+      URL.revokeObjectURL(resultVideoUrl);
+      setResultVideoUrl(null);
+    }
     setInfo(null);
     try {
       const payload = {
@@ -60,12 +92,38 @@ export default function ModelPlayground() {
       form.append('censor', payload.censor);
 
       const res = await fetch(`${API_BASE}/api/playground/detect`, { method: 'POST', body: form });
+      console.log('Playground response status:', res.status, res.statusText);
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('Playground response error:', errorText);
+        setInfo(`Server error: ${res.status} ${errorText}`);
+        setLoading(false);
+        return;
+      }
+      
       const data = await res.json();
-      setResultImage(`data:image/jpeg;base64,${data.image}`);
-      setInfo(
-        `${data.detections_count} detections — model: ${data.model} — iou: ${data.used_iou} — class: ${data.resolved_class_filter ?? 'all'}`
-      );
+      console.log('Playground parsed response keys:', Object.keys(data), 'video length:', data.video?.length || 'none');
+      
+      if (data.video) {
+        console.log('Processing video response, mime:', data.video_mime);
+        const mime = data.video_mime || 'video/mp4';
+        const blob = base64ToBlob(data.video, mime);
+        console.log('Blob created directly from base64, size:', blob.size, 'type:', blob.type);
+        
+        const objectUrl = URL.createObjectURL(blob);
+        setResultVideoUrl(objectUrl);
+        setResultVideo(objectUrl);
+        setInfo(
+          `${data.frames_processed} frames processed — model: ${data.model} — iou: ${data.used_iou} — class: ${data.resolved_class_filter ?? 'all'}`
+        );
+      } else {
+        setResultImage(`data:image/jpeg;base64,${data.image}`);
+        setInfo(
+          `${data.detections_count} detections — model: ${data.model} — iou: ${data.used_iou} — class: ${data.resolved_class_filter ?? 'all'}`
+        );
+      }
     } catch (e) {
+      console.error('Playground detect error:', e);
       setInfo(`Error: ${e.message}`);
     }
     setLoading(false);
@@ -82,7 +140,19 @@ export default function ModelPlayground() {
     <div className="split-layout">
       <div className="split-main">
         <div className="glass-card" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          {resultImage ? (
+          {resultVideo ? (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+              <video
+                src={resultVideo}
+                controls
+                autoPlay
+                muted
+                loop
+                playsInline
+                style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 'var(--radius-md)' }}
+              />
+            </div>
+          ) : resultImage ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
               <img src={resultImage} alt="Detection result" style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 'var(--radius-md)' }} />
             </div>
@@ -121,8 +191,16 @@ export default function ModelPlayground() {
           {loading ? '⏳ Processing...' : '🚀 Run Detection'}
         </button>
 
-        {resultImage && (
-          <button className="btn btn-ghost" onClick={() => { setResultImage(null); setInfo(null); }}
+        {(resultImage || resultVideo) && (
+          <button className="btn btn-ghost" onClick={() => {
+            setResultImage(null);
+            setResultVideo(null);
+            if (resultVideoUrl) {
+              URL.revokeObjectURL(resultVideoUrl);
+              setResultVideoUrl(null);
+            }
+            setInfo(null);
+          }}
             style={{ width: '100%' }}>
             Clear Result
           </button>

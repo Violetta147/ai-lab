@@ -152,8 +152,19 @@ class StreamProcessor:
                 detections = metadata_to_detections(objects)
                 analyzer = self._analyzers.get(stream_id)
 
+                # Indicate whether tracker IDs are present in the metadata
+                try:
+                    tracker_present = (
+                        hasattr(detections, "tracker_id")
+                        and detections.tracker_id.size > 0
+                        and int(detections.tracker_id.max()) != -1
+                    )
+                except Exception:
+                    tracker_present = False
+
                 if analyzer:
                     zone_params = self.zone_store.get(stream_id, {})
+                    zone_params["tracker_present"] = tracker_present
                     active_model = self.model_registry.active_model_name
                     if active_model:
                         try:

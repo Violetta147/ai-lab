@@ -32,6 +32,8 @@ class KafkaConsumerService:
         self.buffers: dict[str, list[tuple[float, dict]]] = defaultdict(list)
         self._lock = asyncio.Lock()
         self._running = False
+        # Track streams we've already warned about missing tracking_id to avoid log spam
+        self._warned_missing_tracker: set[str] = set()
 
     async def start(self) -> None:
         """Start the Kafka consumer background task."""
@@ -75,6 +77,18 @@ class KafkaConsumerService:
                     data = msg.value
                     stream_id = data.get("stream_id", "unknown")
                     timestamp = float(data.get("timestamp", 0))
+
+                    # Basic schema validation: ensure objects list contains expected fields
+                    objs = data.get("objects", [])
+                    if objs:
+                        sample = objs[0]
+                        if "tracking_id" not in sample and stream_id not in self._warned_missing_tracker:
+                            logger.warning(
+                                "Kafka message missing 'tracking_id' for stream %s — analytics may fail. Sample: %s",
+                                stream_id,
+                                str(sample)[:200],
+                            )
+                            self._warned_missing_tracker.add(stream_id)
 
                     async with self._lock:
                         buffer = self.buffers[stream_id]

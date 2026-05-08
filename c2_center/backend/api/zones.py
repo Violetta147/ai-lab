@@ -2,10 +2,9 @@
 
 from fastapi import APIRouter
 
-router = APIRouter(prefix="/api/zones", tags=["zones"])
+from services.zone_db import zone_store
 
-# In-memory zone store: stream_id -> {roi_polygon, entry_line, exit_line, ...}
-zone_store: dict[str, dict] = {}
+router = APIRouter(prefix="/api/zones", tags=["zones"])
 
 
 @router.get("/{stream_id}")
@@ -27,11 +26,11 @@ async def set_zones(stream_id: str, data: dict):
     """
     current = zone_store.get(stream_id, {})
     current.update(data)
-    zone_store[stream_id] = current
+    zone_store.set(stream_id, current)
     return {"status": "ok", "stream_id": stream_id, "zones": current}
 
 
 @router.delete("/{stream_id}")
 async def clear_zones(stream_id: str):
-    zone_store.pop(stream_id, None)
+    zone_store.delete(stream_id)
     return {"status": "cleared", "stream_id": stream_id}

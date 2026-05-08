@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     API_PORT: int = 8000
     WS_PORT: int = 8001
 
+    # --- Zone DB ---
+    ZONE_DB_PATH: Path = Path(__file__).parent / "zone_store.db"
+
     # (No additional behavior flags)
 
     model_config = {"env_prefix": "C2_", "env_file": ".env", "extra": "ignore"}
