@@ -1,2 +1,0 @@
-# All Cursor Conversations
-

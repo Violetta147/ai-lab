@@ -1,0 +1,78 @@
+{
+  "schema_version": "1.0",
+  "extensions": {
+    "git": {
+      "version": "1.0.0",
+      "source": "local",
+      "manifest_hash": "sha256:9731aa8143a72fbebfdb440f155038ab42642517c2b2bdbbf67c8fdbe076ed79",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "copilot": [
+          "speckit.git.feature",
+          "speckit.git.validate",
+          "speckit.git.remote",
+          "speckit.git.initialize",
+          "speckit.git.commit"
+        ],
+        "cursor-agent": [
+          "speckit.git.feature",
+          "speckit.git.validate",
+          "speckit.git.remote",
+          "speckit.git.initialize",
+          "speckit.git.commit"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-05-08T04:24:39.043776+00:00"
+    },
+    "superpowers": {
+      "version": "1.0.0",
+      "source": "local",
+      "manifest_hash": "sha256:735c15cc54f723ff2a16d6b4300b8d0678ff50590d86f0915ce45fe401c6ef34",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "copilot": [
+          "speckit.superpowers.status",
+          "speckit.superpowers.brainstorm",
+          "speckit.superpowers.tasks",
+          "speckit.superpowers.execute",
+          "speckit.superpowers.review"
+        ],
+        "cursor-agent": [
+          "speckit.superpowers.status",
+          "speckit.superpowers.brainstorm",
+          "speckit.superpowers.tasks",
+          "speckit.superpowers.execute",
+          "speckit.superpowers.review"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-05-08T04:29:28.314668+00:00"
+    },
+    "test": {
+      "version": "1.0.0",
+      "source": "local",
+      "manifest_hash": "sha256:6c0c96c50bcf9af36d8d700f7142d0ae77ca95164948bbec8c8c81c53a978195",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "copilot": [
+          "speckit.test.generate",
+          "speckit.test.coverage",
+          "speckit.test.gaps",
+          "speckit.test.plan"
+        ],
+        "cursor-agent": [
+          "speckit.test.generate",
+          "speckit.test.coverage",
+          "speckit.test.gaps",
+          "speckit.test.plan"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-05-08T05:09:05.110353+00:00"
+    }
+  }
+}
