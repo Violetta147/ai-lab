@@ -1,7 +1,7 @@
 import time
 import numpy as np
 import supervision as sv
-from analytics.fundamental_equation import FundamentalEquationAnalyzer
+from app.analytics.plugins.fundamental_equation import FundamentalEquationAnalyzer
 
 
 def make_detections_xyxy(cx, cy, w=40, h=20, tracker_id=1):

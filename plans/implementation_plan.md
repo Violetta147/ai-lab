@@ -82,53 +82,104 @@ Model labels (3 classes): `car`, `motor`, `heavy_vehicle`
 
 > **Deep Analysis**: nhận video live từ WebSocket + DeepStream/Kafka, không phụ thuộc vào Playground video mode.
 
+> **Backend layering**: từ v2.2, backend không còn `services/` flat. Code được tách theo concern thành 5 layer trong `backend/app/`:
+> - `domain/` — pure business types (no I/O)
+> - `infrastructure/` — adapters tới external systems (Kafka, DB, MediaMTX, RTSP, ML models)
+> - `analytics/` — plugin system (registry + plugins/)
+> - `runtime/` — stream lifecycle, pipeline coordination, analytics dispatch, sync engine
+> - `pipelines/` — composition functions (live monitoring; replay/playground sẽ thêm sau)
+> - `api/` + `ws/` — transport (FastAPI routers, WebSocket adapter)
+
 ```
-│
 ├── infrastructure/
-│   ├── mediamtx.yml                # MediaMTX multi-path config
-│   └── start_cameras.ps1           # PowerShell: N FFmpeg processes
+│   ├── mediamtx.yml                # MediaMTX multi-path config (auto-generated)
+│   └── manage_cameras.ps1          # PowerShell: launch FFmpeg per camera
 │
 ├── deepstream/
 │   └── multi-stream/
-│       ├── setup_c2_multistream.sh # Setup script (follows single-stream pattern)
+│       ├── setup_c2_multistream.sh # Setup script (single-stream pattern)
 │       ├── cfg_kafka.txt           # Kafka broker connection
-│       └── nvmsgconv_c2/          # Custom C++ msg2p library source
+│       └── nvmsgconv_c2/           # Custom C++ msg2p library source
 │           ├── c2_payload.cpp
 │           ├── c2_payload.h
-│           └── Makefile
+│           ├── Makefile
+│           └── nvmsgconv_c2_config.txt
 │
 ├── backend/
 │   ├── requirements.txt
-│   ├── main.py                     # FastAPI entry (:8000 + :8001)
-│   ├── config.py                   # Pydantic Settings
-│   ├── models/                     # ← Dynamic model directory
+│   ├── prune_module.py             # Kept at root for ultralytics .pt deserialization
+│   ├── ml_models/                  # Dynamic model directory
 │   │   ├── yolo_p2n_ft2/
 │   │   │   ├── best.pt
 │   │   │   └── labels.txt          # car\nmotor\nheavy_vehicle
 │   │   └── yolov8n_coco/
 │   │       ├── yolov8n.pt
 │   │       └── labels.txt          # 80 COCO classes
-│   ├── services/
-│   │   ├── kafka_consumer.py       # aiokafka → per-stream queue
-│   │   ├── video_reader.py         # N threads × cv2.VideoCapture
-│   │   ├── sync_engine.py          # Timestamp matcher (±50ms)
-│   │   └── model_registry.py       # Auto-scan models/ directory
-│   ├── analytics/
-│   │   ├── base.py                 # Abstract analyzer interface
-│   │   ├── absolute_count.py       # Hàm 1: k = N/L
-│   │   ├── area_occupancy.py       # Hàm 2: BEV % occupancy
-│   │   ├── pce_density.py          # Hàm 3: PCE-aware
-│   │   ├── fundamental_equation.py # Hàm 4: k = q/v
-│   │   ├── heatmap.py              # sv.HeatMapAnnotator
-│   │   └── line_crossing.py        # sv.LineZone
-│   ├── api/
-│   │   ├── streams.py              # GET /api/streams, /api/health
-│   │   ├── zones.py                # CRUD polygon/line coords
-│   │   ├── analytics_api.py        # Switch algorithm, get stats
-│   │   ├── models_api.py           # GET /api/models, PUT /api/models/active
-│   │   └── playground.py           # POST /api/playground/detect
-│   └── ws/
-│       └── streamer.py             # WS broadcast (video + stats)
+│   ├── tests/
+│   │   ├── conftest.py
+│   │   ├── test_fundamental_equation.py
+│   │   └── test_kafka_connection.py
+│   └── app/
+│       ├── main.py                 # FastAPI entry (uvicorn app.main:app, :8000 + :8001)
+│       │
+│       ├── core/
+│       │   └── config.py           # Pydantic Settings (env prefix C2_)
+│       │
+│       ├── domain/                 # Pure business types — no I/O, no framework
+│       │   ├── camera/models.py    # Camera dataclass
+│       │   ├── stream/models.py    # StreamId, StreamStatus
+│       │   ├── analytics/models.py # AnalysisResult dataclass
+│       │   ├── detection/
+│       │   │   ├── models.py       # DetectionObject, BoundingBox
+│       │   │   └── converters.py   # metadata_to_detections() → sv.Detections
+│       │   └── zones/models.py     # Polygon, LineSegment
+│       │
+│       ├── infrastructure/         # Adapters to external systems
+│       │   ├── kafka/consumer.py   # aiokafka → per-stream metadata buffers
+│       │   ├── mediamtx/client.py  # mediamtx.yml generator/deployer
+│       │   ├── database/
+│       │   │   ├── camera_repository.py
+│       │   │   └── zone_repository.py
+│       │   ├── models/registry.py  # Scan ml_models/ directory + lazy-load YOLO
+│       │   ├── video/rtsp_reader.py # N threads × cv2.VideoCapture (RtspVideoReader)
+│       │   └── encoding/jpeg.py    # frame_to_base64()
+│       │
+│       ├── analytics/              # Plugin system
+│       │   ├── base.py             # BaseAnalyzer ABC (re-exports AnalysisResult)
+│       │   ├── contracts.py        # AnalyzerMetadata
+│       │   ├── registry.py         # AnalyticsRegistry + plugin discovery (singleton)
+│       │   └── plugins/            # Auto-discovered by registry.discover()
+│       │       ├── absolute_count.py       # Hàm 1: k = N/L
+│       │       ├── area_occupancy.py       # Hàm 2: BEV % occupancy
+│       │       ├── pce_density.py          # Hàm 3: PCE-aware
+│       │       ├── fundamental_equation.py # Hàm 4: k = q/v
+│       │       ├── heatmap.py              # sv.HeatMapAnnotator
+│       │       └── line_crossing.py        # sv.LineZone
+│       │
+│       ├── runtime/                # Ownership: stream lifecycle, pipeline, analytics dispatch
+│       │   ├── stream_manager.py        # Active stream registry + lifecycle hooks
+│       │   ├── analytics_dispatcher.py  # Per-stream analyzer assignment + run()
+│       │   ├── pipeline_manager.py      # Per-stream asyncio loop, emits frame/stats events
+│       │   └── sync_engine.py           # Timestamp matcher (±50ms)
+│       │
+│       ├── pipelines/              # Composition (wire infra + runtime + transport)
+│       │   └── live_monitoring.py       # wire_live_pipeline() → LivePipelineHandle
+│       │
+│       ├── api/                    # FastAPI routers
+│       │   ├── streams.py          # GET /api/streams, /api/health
+│       │   ├── cameras.py          # CRUD camera sources
+│       │   ├── zones.py            # CRUD polygon/line coords
+│       │   ├── analytics_api.py    # GET algorithms, PUT algorithm/{stream_id}
+│       │   ├── models_api.py       # GET /api/models, PUT /api/models/active
+│       │   ├── playground.py       # POST /api/playground/detect
+│       │   └── mediamtx.py         # preview/deploy mediamtx.yml
+│       │
+│       ├── ws/streamer.py          # WsStreamer transport (subscribe to PipelineManager)
+│       │
+│       └── storage/
+│           └── sqlite/             # Persistent state
+│               ├── c2_cameras.db
+│               └── zone_store.db
 │
 └── frontend/
     ├── package.json
@@ -139,17 +190,37 @@ Model labels (3 classes): `car`, `motor`, `heavy_vehicle`
         ├── pages/
         │   ├── ModelPlayground.jsx  # Tab 1
         │   ├── GridView.jsx         # Tab 2
-        │   └── DeepAnalysis.jsx     # Tab 3
+        │   ├── DeepAnalysis.jsx     # Tab 3
+        │   └── CameraManagement.jsx # CRUD UI
         ├── components/
-        │   ├── DetectionControls.jsx # Sliders + toggles panel
-        │   ├── FileDropZone.jsx      # Drag & drop upload
-        │   ├── VideoPlayer.jsx       # WS video <img>
-        │   ├── PolygonDrawer.jsx     # Draw zones on canvas
-        │   ├── TrafficChart.jsx      # Recharts real-time
-        │   └── StreamCard.jsx        # Grid cell + status
+        │   ├── DetectionControls.jsx
+        │   ├── FileDropZone.jsx
+        │   ├── PolygonDrawer.jsx
+        │   ├── TrafficChart.jsx
+        │   └── StreamCard.jsx
         └── hooks/
             └── useWebSocket.js
 ```
+
+### Data flow & ownership
+
+```
+RTSP cameras ─► RtspVideoReader (infra/video) ─┐
+                                                ├─► SyncEngine (runtime) ─► PipelineManager (runtime)
+DeepStream  ─► KafkaConsumer (infra/kafka) ────┘                                  │
+                                                                                  ├─► AnalyticsDispatcher (runtime) ─► registered plugin
+                                                                                  │                                       │
+                                                                                  ▼                                       ▼
+                                                                            on_frame/on_stats subscribers ◄────── AnalysisResult
+                                                                                  │
+                                                                                  ▼
+                                                                            WsStreamer (ws) ─► WebSocket clients
+```
+
+- **runtime/** owns: which streams exist, when their pipeline tasks start/stop, which analyzer is bound to each stream.
+- **infrastructure/** owns: connections to external systems. No business logic.
+- **pipelines/live_monitoring.py** owns: how the pieces are wired together. Easy to replace without touching individual components.
+- Adding a new analytics plugin = drop a `BaseAnalyzer` subclass into `app/analytics/plugins/`. `registry.discover()` picks it up at startup.
 
 ---
 
@@ -319,7 +390,7 @@ Build: `make` → `libnvds_msgconv_c2.so`, copy vào workspace.
 
 ### Phase 3: C2 Backend Core (FastAPI)
 
-#### [NEW] `c2_center/backend/requirements.txt`
+#### `c2_center/backend/requirements.txt`
 ```
 fastapi==0.115.0
 uvicorn[standard]==0.30.0
@@ -333,25 +404,25 @@ pydantic-settings>=2.0
 python-multipart>=0.0.9
 ```
 
-#### [NEW] `c2_center/backend/config.py`
+#### `c2_center/backend/app/core/config.py`
 ```python
 class Settings(BaseSettings):
     KAFKA_BOOTSTRAP: str = "localhost:9092"
     KAFKA_TOPIC: str = "c2_metadata"
-    RTSP_STREAMS: dict = {
-        "cam_1": "rtsp://localhost:8554/cam1",
-        "cam_2": "rtsp://localhost:8554/cam2",
-    }
-    MODELS_DIR: Path = Path("./models")   # ← scan thư mục này
+    MODELS_DIR: Path = _BACKEND_DIR / "ml_models"
     SYNC_TOLERANCE_MS: float = 50.0
     WS_TARGET_FPS: int = 15
+    CAMERA_DB_PATH: Path = _SQLITE_DIR / "c2_cameras.db"
+    ZONE_DB_PATH: Path = _SQLITE_DIR / "zone_store.db"
+
+    model_config = {"env_prefix": "C2_", "env_file": ".env", "extra": "ignore"}
 ```
 
 > [!NOTE]
-> - `RTSP_STREAMS` là dict động — thêm stream mới chỉ cần thêm entry + restart backend. Frontend auto-discover qua `GET /api/streams`.
-> - `MODELS_DIR` trỏ đến thư mục chứa các model. Backend tự scan, **không hardcode tên model**.
+> - Cameras được quản lý dynamic qua SQLite (`app/storage/sqlite/c2_cameras.db`). Thêm camera = POST `/api/cameras`. Frontend auto-discover qua `GET /api/streams`.
+> - `MODELS_DIR` trỏ đến `backend/ml_models/`. Backend tự scan, **không hardcode tên model**.
 
-#### [NEW] `c2_center/backend/services/model_registry.py`
+#### `c2_center/backend/app/infrastructure/models/registry.py`
 
 Dynamic model discovery — Backend tự đọc, không cần biết trước model nào:
 
@@ -400,28 +471,28 @@ class ModelRegistry:
 - `PUT /api/models/active` → chọn model active cho Playground
 - Frontend hiển thị model selector dropdown
 
-**Cách thêm model mới**: Chỉ cần copy folder vào `backend/models/`:
+**Cách thêm model mới**: Chỉ cần copy folder vào `backend/ml_models/`:
 ```
-models/
+ml_models/
 ├── my_new_model/
 │   ├── best.pt        # hoặc .onnx
 │   └── labels.txt     # mỗi dòng = 1 class name
 ```
 Restart backend → model tự xuất hiện trong dropdown.
 
-#### [NEW] `c2_center/backend/services/kafka_consumer.py`
+#### `c2_center/backend/app/infrastructure/kafka/consumer.py`
 
 - `aiokafka.AIOKafkaConsumer` subscribe topic `c2_metadata`
-- Parse JSON → route theo `stream_id` → push vào `asyncio.Queue` per stream
-- Background task trong FastAPI lifespan
+- Parse JSON → route theo `stream_id` → push vào per-stream buffer
+- Background task được start/stop bởi `LivePipelineHandle` trong FastAPI lifespan
 
-#### [NEW] `c2_center/backend/services/video_reader.py`
+#### `c2_center/backend/app/infrastructure/video/rtsp_reader.py`
 
 - N daemon threads × `cv2.VideoCapture(rtsp_url)`
 - Mỗi thread push `(frame, timestamp)` vào `queue.Queue(maxsize=30)`
-- Auto-reconnect loop nếu mất kết nối
+- Auto-reconnect loop với exponential backoff nếu mất kết nối
 
-#### [NEW] `c2_center/backend/services/sync_engine.py`
+#### `c2_center/backend/app/runtime/sync_engine.py`
 
 ```python
 class SyncEngine:
@@ -437,36 +508,43 @@ class SyncEngine:
 
 ### Phase 4: Traffic Analytics (4 Algorithms + Supervision)
 
-Port toàn bộ logic từ `density/` folder. Mỗi algorithm là 1 class độc lập, conform chung 1 interface:
+Port toàn bộ logic từ `density/` folder. Mỗi algorithm là 1 plugin class trong `app/analytics/plugins/`, conform chung 1 interface:
 
 ```python
-# analytics/base.py
+# app/analytics/base.py
 class BaseAnalyzer(ABC):
+    @property
     @abstractmethod
-    def process(self, frame, detections: sv.Detections, params: dict) -> AnalysisResult:
-        """Return annotated frame + metrics dict."""
+    def slug(self) -> str: ...
+    @property
+    @abstractmethod
+    def name(self) -> str: ...
+    @abstractmethod
+    def process(self, frame, detections: sv.Detections, params: dict) -> AnalysisResult: ...
 ```
 
-#### [NEW] `analytics/absolute_count.py`
+`AnalyticsRegistry.discover('app.analytics.plugins')` walks the package at startup, registers every concrete `BaseAnalyzer` subclass automatically.
+
+#### `app/analytics/plugins/absolute_count.py`
 Port từ [density_absolute_count.py](file:///d:/datas/Final.yolov8/density/density_absolute_count.py):
 - `k = N / L` (N = xe trong ROI, L = chiều dài đường km)
 - Centroid-based point-in-polygon test
 - **User vẽ ROI polygon** → nhận coords từ REST API
 
-#### [NEW] `analytics/area_occupancy.py`
+#### `app/analytics/plugins/area_occupancy.py`
 Port từ [density_area_occupancy.py](file:///d:/datas/Final.yolov8/density/density_area_occupancy.py):
 - Bird's Eye View transform (Homography)
 - BEV canvas → `countNonZero` → occupancy %
 - Minimap radar overlay
 - **User vẽ 4-point ROI** → tính `PERSPECTIVE_MATRIX`
 
-#### [NEW] `analytics/pce_density.py`
+#### `app/analytics/plugins/pce_density.py`
 Port từ [density_pce_aware.py](file:///d:/datas/Final.yolov8/density/density_pce_aware.py):
 - PCE weights: `{car: 1.0, motor: 0.5, heavy_vehicle: 2.5}`
 - `k_pce = total_pce / ROAD_LENGTH_KM`
 - Color-coded congestion status (Normal/Heavy/Jam)
 
-#### [NEW] `analytics/fundamental_equation.py`
+#### `app/analytics/plugins/fundamental_equation.py`
 Port từ [density_fundamental_equation.py](file:///d:/datas/Final.yolov8/density/density_fundamental_equation.py):
 - Entry/Exit line zones → `sv.LineZone`
 - Sliding window 30s → flow rate `q` (veh/h)
@@ -474,11 +552,11 @@ Port từ [density_fundamental_equation.py](file:///d:/datas/Final.yolov8/densit
 - `k = q / v`
 - **User vẽ Entry line + Exit line** → nhận coords
 
-#### [NEW] `analytics/heatmap.py`
+#### `app/analytics/plugins/heatmap.py`
 - `sv.HeatMapAnnotator(radius=40, opacity=0.6)`
 - Accumulates detection positions over time
 
-#### [NEW] `analytics/line_crossing.py`
+#### `app/analytics/plugins/line_crossing.py`
 - `sv.LineZone` wrapper for simple counting
 - **User vẽ line** → gửi 2 điểm qua REST API
 
@@ -486,19 +564,32 @@ Port từ [density_fundamental_equation.py](file:///d:/datas/Final.yolov8/densit
 
 ### Phase 5: WebSocket Video Streaming
 
-#### [NEW] `c2_center/backend/ws/streamer.py`
+Phần này được tách thành 3 file thay cho 1 monolithic `StreamProcessor`:
 
-Processing loop per stream (15 FPS):
+#### `c2_center/backend/app/runtime/pipeline_manager.py`
+
+Per-stream asyncio loop (15 FPS):
 1. `sync_engine.get_synced_frame(stream_id)`
-2. JSON objects → `sv.Detections`
-3. Run active analyzer (user-selected algorithm)
-4. Annotate frame
-5. `cv2.imencode('.jpg')` → base64
-6. Broadcast via WebSocket
+2. JSON objects → `sv.Detections` qua `app.domain.detection.converters.metadata_to_detections`
+3. `analytics_dispatcher.run(stream_id, frame, detections, params)`
+4. Emit `(stream_id, annotated_frame, metrics)` tới every subscriber
+
+#### `c2_center/backend/app/runtime/analytics_dispatcher.py`
+
+Per-stream analyzer assignment:
+- `attach_stream(stream_id, slug)` — bind default algorithm
+- `set_algorithm(stream_id, slug)` — switch algorithm runtime
+- `run(stream_id, frame, detections, params)` — invoke `analyzer.process()`
+
+#### `c2_center/backend/app/ws/streamer.py`
+
+Transport-only — subscribes to PipelineManager events:
+- `on_frame(stream_id, frame, metrics)` → `frame_to_base64` → broadcast JPEG
+- `on_stats(stream_id, metrics)` → broadcast JSON at 2 Hz
 
 Channels:
-- `ws://localhost:8001/stream/{stream_id}` → base64 JPEG frames
-- `ws://localhost:8001/stats/{stream_id}` → JSON analytics metrics
+- `ws://localhost:8001/ws/stream/{stream_id}` → base64 JPEG frames
+- `ws://localhost:8001/ws/stats/{stream_id}` → JSON analytics metrics
 
 ---
 
