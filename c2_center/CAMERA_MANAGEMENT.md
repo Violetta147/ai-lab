@@ -51,14 +51,14 @@ The system now supports **fully dynamic camera management** without code changes
 
 ```powershell
 cd D:\datas\Final.yolov8\rstp\mediamtx_v1.17.1_windows_amd64
-.\mediamtx.exe ..\..\..\c2_center\infrastructure\mediamtx.yml
+.\mediamtx.exe ..\..\c2_center\infrastructure\mediamtx.yml
 ```
 
 ### 2. Start Backend
 
 ```bash
 cd D:\datas\Final.yolov8\c2_center\backend
-uvicorn main:app --host 0.0.0.0 --port 8000
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 ### 3. Start Frontend
@@ -190,7 +190,7 @@ These match the MediaMTX paths configured in `mediamtx.yml`.
 
 ## Database
 
-**Location:** `D:\datas\Final.yolov8\c2_center\backend\c2_cameras.db`
+**Location:** `D:\datas\Final.yolov8\c2_center\backend\app\storage\sqlite\c2_cameras.db`
 
 **Schema:**
 ```sql
