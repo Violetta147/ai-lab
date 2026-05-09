@@ -74,19 +74,30 @@ cd D:\datas\Final.yolov8\rstp\mediamtx_v1.17.1_windows_amd64
 
 ## 5. Start DeepStream on Jetson Nano (Edge AI)
 
+> ⚠️ **HARDWARE WARNING**: The Jetson Nano is extremely constrained for modern multi-stream AI. Running 2x 1080p YOLOv8 streams with tracking will push the GPU to ~98% and peg CPU cores to ~99%, leading to frame drops, pipeline latency, and thermal throttling over time. For production, limit to 1x 1080p stream or optimize models heavily (pruning/INT8).
+
 The Edge AI component runs on the Jetson Nano, pulling RTSP streams, running YOLO inference, and publishing JSON metadata to Kafka.
 
 1. SSH into your Jetson Nano.
-2. Ensure you have the `yolo_all_exports_p2n_fine-tuning2_best.engine` and the custom parser library built.
-3. Set your environment variables and run the multi-stream script:
+2. Launch the persistent container (do NOT use `--rm` to avoid losing installed packages):
+```bash
+sudo docker run -dit --name c2-deepstream --net=host \
+    --runtime nvidia \
+    -v ~/deepstream_yolo:/root/deepstream_yolo \
+    nvcr.io/nvidia/deepstream-l4t:6.0.1-samples \
+    sleep infinity
+
+sudo docker exec -it c2-deepstream bash
+```
+3. Inside the container, set your environment variables and run the multi-stream script:
 
 ```bash
-# Inside the DeepStream container or Jetson environment:
-cd /workspace/c2_center/deepstream/multi-stream
+cd /root/deepstream_yolo/multi-stream
 
 # Set the IP of the server running Kafka (Laptop A)
-export LAPTOP_A_IP="192.168.1.196" # Change to your actual server IP
+export LAPTOP_A_IP="192.168.1.234" # Change to your actual server IP
 export NUM_SOURCES=2               # Set to the number of active cameras
+export RTSP_PATHS="muahe,camera_parking"
 
 # Launch the pipeline
 bash setup_c2_multistream.sh

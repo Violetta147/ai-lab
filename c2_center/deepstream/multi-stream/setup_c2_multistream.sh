@@ -66,8 +66,10 @@ MODEL_NUM_CLASSES="${MODEL_NUM_CLASSES:-}"
 KAFKA_BROKER="${LAPTOP_A_IP}:9092"
 KAFKA_TOPIC="${KAFKA_TOPIC:-c2_metadata}"
 
-# RTSP source ports (cam1=8554, cam2=8556, cam3=8558, ...)
+# RTSP source paths (override with: RTSP_PATHS="muahe,camera_parking")
+# Defaults to cam1,cam2,...,camN if not provided
 RTSP_BASE_PORT="${RTSP_BASE_PORT:-8554}"
+RTSP_PATHS="${RTSP_PATHS:-}"
 
 # Output files
 INFER_CFG="${WORK_DIR}/config_infer_c2.txt"
@@ -89,6 +91,11 @@ if [ -z "${MODEL_NUM_CLASSES}" ]; then
     MODEL_NUM_CLASSES="$(awk 'NF { c+=1 } END { print c+0 }' "${MODEL_LABELS_FILE}")"
 fi
 echo "[C2] Classes:       ${MODEL_NUM_CLASSES}"
+
+# --- Inference Batch Size ---
+# Force batch-size=1 for Jetson Nano to prevent TRT engine rebuild and OOM.
+# The streammux can still handle multiple streams, but inferencing will process 1 frame at a time.
+INFER_BATCH_SIZE=1
 
 # --- Validation ---
 [ ! -f "${MODEL_ENGINE_FILE}" ] && echo "[ERROR] Missing: ${MODEL_ENGINE_FILE}" && exit 1
@@ -113,7 +120,7 @@ model-color-format=0
 onnx-file=${MODEL_ONNX_FILE}
 model-engine-file=${MODEL_ENGINE_FILE}
 labelfile-path=${MODEL_LABELS_FILE}
-batch-size=${NUM_SOURCES}
+batch-size=${INFER_BATCH_SIZE}
 network-mode=0
 num-detected-classes=${MODEL_NUM_CLASSES}
 interval=${MODEL_INTERVAL}
@@ -134,11 +141,34 @@ EOF
 
 # =============================================================================
 # CONFIG: Kafka connection
+# Section header [message-broker] is REQUIRED by libnvds_kafka_proto.so
 # =============================================================================
 echo "[C2] Writing Kafka config..."
 cat > "${KAFKA_CFG}" << EOF
+[message-broker]
 bootstrap.servers=${KAFKA_BROKER}
 EOF
+
+# =============================================================================
+# CONFIG: nvmsgconv must live at WORK_DIR root so msg-conv-config path resolves.
+# The source-of-truth file is in nvmsgconv_c2/; copy it up if not already there.
+# =============================================================================
+NVMSGCONV_CFG_SRC="${WORK_DIR}/nvmsgconv_c2/nvmsgconv_c2_config.txt"
+NVMSGCONV_CFG_DST="${WORK_DIR}/nvmsgconv_c2_config.txt"
+if [ -f "${NVMSGCONV_CFG_SRC}" ] && [ ! -f "${NVMSGCONV_CFG_DST}" ]; then
+    echo "[C2] Copying nvmsgconv_c2_config.txt to WORK_DIR root..."
+    cp "${NVMSGCONV_CFG_SRC}" "${NVMSGCONV_CFG_DST}"
+fi
+[ ! -f "${NVMSGCONV_CFG_DST}" ] && echo "[ERROR] Missing nvmsgconv config: ${NVMSGCONV_CFG_DST}" && exit 1
+
+# Same for the msg2p shared library
+MSGCONV_LIB_SRC="${WORK_DIR}/nvmsgconv_c2/libnvds_msgconv_c2.so"
+MSGCONV_LIB_DST="${WORK_DIR}/libnvds_msgconv_c2.so"
+if [ -f "${MSGCONV_LIB_SRC}" ] && [ ! -f "${MSGCONV_LIB_DST}" ]; then
+    echo "[C2] Copying libnvds_msgconv_c2.so to WORK_DIR root..."
+    cp "${MSGCONV_LIB_SRC}" "${MSGCONV_LIB_DST}"
+fi
+[ ! -f "${MSGCONV_LIB_DST}" ] && echo "[ERROR] Missing msg2p lib: ${MSGCONV_LIB_DST} (build it: cd nvmsgconv_c2 && make)" && exit 1
 
 # =============================================================================
 # CONFIG: App pipeline
@@ -152,15 +182,21 @@ perf-measurement-interval-sec=5
 EOF
 
 # --- Generate N source blocks ---
+# RTSP_PATHS="muahe,camera_parking" overrides the default cam1,cam2,...
+IFS=',' read -ra RTSP_PATH_ARR <<< "${RTSP_PATHS}"
 for i in $(seq 0 $((NUM_SOURCES - 1))); do
     PORT=${RTSP_BASE_PORT}  # Keep port 8554 for ALL streams
-    CAM_NUM=$((i + 1))
+    if [ -n "${RTSP_PATH_ARR[$i]:-}" ]; then
+        CAM_PATH="${RTSP_PATH_ARR[$i]}"
+    else
+        CAM_PATH="cam$((i + 1))"
+    fi
     cat >> "${APP_CFG}" << EOF
 
 [source${i}]
 enable=1
 type=4
-uri=rtsp://${LAPTOP_A_IP}:${PORT}/cam${CAM_NUM}
+uri=rtsp://${LAPTOP_A_IP}:${PORT}/${CAM_PATH}
 gpu-id=0
 select-rtp-protocol=4
 latency=150
@@ -204,16 +240,13 @@ enable=0
 [sink0]
 enable=1
 type=6
-msg-conv-config=${WORK_DIR}/nvmsgconv_c2_config.txt
+msg-conv-config=${NVMSGCONV_CFG_DST}
 msg-conv-payload-type=256
-msg-conv-msg2p-lib=${WORK_DIR}/libnvds_msgconv_c2.so
+msg-conv-msg2p-lib=${MSGCONV_LIB_DST}
 msg-broker-proto-lib=${DS_DIR}/lib/libnvds_kafka_proto.so
 msg-broker-conn-str=${LAPTOP_A_IP};9092;${KAFKA_TOPIC}
 msg-broker-config=${KAFKA_CFG}
-
-[sink1]
-enable=1
-type=1
+sync=0
 EOF
 
 echo "============================================"
