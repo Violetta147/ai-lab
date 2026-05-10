@@ -74,12 +74,15 @@ cd D:\datas\Final.yolov8\rstp\mediamtx_v1.17.1_windows_amd64
 
 ## 5. Start DeepStream on Jetson Nano (Edge AI)
 
-> ⚠️ **HARDWARE WARNING**: The Jetson Nano is extremely constrained for modern multi-stream AI. Running 2x 1080p YOLOv8 streams with tracking will push the GPU to ~98% and peg CPU cores to ~99%, leading to frame drops, pipeline latency, and thermal throttling over time. For production, limit to 1x 1080p stream or optimize models heavily (pruning/INT8).
+> ⚠️ **HARDWARE LIMITS**: Per [RCA-2026-05-09-DS001](docs/RCA-2026-05-09-DS001.md), the Jetson Nano operates at its absolute ceiling when running the C2 pipeline. 
+> - **GPU**: ~98% utilization.
+> - **CPU**: Core #4 pegged at 99%.
+> - **Risk**: Imminent thermal throttling and frame drops. INT8 optimization or resolution downscaling is highly recommended.
 
 The Edge AI component runs on the Jetson Nano, pulling RTSP streams, running YOLO inference, and publishing JSON metadata to Kafka.
 
-1. SSH into your Jetson Nano.
-2. Launch the persistent container (do NOT use `--rm` to avoid losing installed packages):
+1. **Deployment**: Upload your model (`.engine`), labels (`_labels.txt`), ONNX file, and the appropriate setup script to the Jetson Nano.
+2. **Launch Container**:
 ```bash
 sudo docker run -dit --name c2-deepstream --net=host \
     --runtime nvidia \
@@ -89,19 +92,28 @@ sudo docker run -dit --name c2-deepstream --net=host \
 
 sudo docker exec -it c2-deepstream bash
 ```
-3. Inside the container, set your environment variables and run the multi-stream script:
+3. **Run Pipeline**: Inside the container, choose the script that matches your algorithm's geometry needs:
 
 ```bash
 cd /root/deepstream_yolo/multi-stream
 
-# Set the IP of the server running Kafka (Laptop A)
-export LAPTOP_A_IP="192.168.1.234" # Change to your actual server IP
-export NUM_SOURCES=2               # Set to the number of active cameras
-export RTSP_PATHS="muahe,camera_parking"
+# Set Environment Variables
+export LAPTOP_A_IP="192.168.1.234" # Your server IP
+export NUM_SOURCES=2               # Number of active streams
+export RTSP_PATHS="cam1,cam2"      # RTSP paths on MediaMTX
 
-# Launch the pipeline
-bash setup_c2_multistream.sh
+# OPTION A: Area Occupancy / Density (Polygon ROI)
+bash setup_c2_roi.sh
+
+# OPTION B: Line Crossing / Speed (Entry/Exit Lines)
+bash setup_c2_crossing.sh
 ```
+
+### Jetson Optimization & Headless Mode
+The setup scripts now automatically apply critical fixes from the latest [RCA](docs/RCA-2026-05-09-DS001.md):
+- **Headless Fix**: Forcing `EGL_DISPLAY=none` and stripping EGL sink stubs to prevent plugin blacklisting in SSH sessions.
+- **Batch Alignment**: Forcing `batch-size=1` for both `streammux` and `nvinfer` to match static ONNX exports and prevent OOM on the Nano.
+- **Cache Clearing**: Automatically wipes the GStreamer registry on start to ensure plugin changes are picked up.
 
 ---
 
@@ -109,9 +121,9 @@ bash setup_c2_multistream.sh
 
 Once all components are running, verify the pipeline:
 
-1. **Backend Health:** Go to `http://localhost:8000/api/health`. You should see `"kafka_connected": true` and a list of streams.
-2. **Grid View:** Open the Frontend -> **Grid View** tab. You should see live video feeds from all connected RTSP cameras.
-3. **Model Playground:** Go to the **Model Playground** tab to test offline tracking and inference with uploaded videos/images.
-4. **Deep Analysis:** Go to the **Deep Analysis** tab to see live metrics (Counts, Heatmap) and draw ROIs for offline/playground analytics.
+1. **Backend Health:** Go to `http://localhost:8000/api/health`. You should see `"kafka_connected": true`.
+2. **Grid View:** Open the Frontend -> **Grid View** tab. You should see live video feeds.
+3. **Deep Analysis:** Go to the **Deep Analysis** tab. Select your algorithm (e.g., Line Crossing). The UI will present the corresponding parameters (Entry/Exit lines).
+4. **Live Telemetry:** Monitor `jtop` on the Jetson Nano to ensure the pipeline is stable and not thermal throttling.
 
-*Next up: We will begin evaluating the separation of live monitoring (simple accumulation) vs offline advanced analytics (Option D) to optimize the system for reliability.*
+*Note: For production, we are transitioning from simple accumulation to Option D (Server-side Advanced Analytics) where the Jetson provides high-frequency raw metadata and the server performs the complex geometry logic.*
