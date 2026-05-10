@@ -21,6 +21,7 @@ class LineCrossingAnalyzer(BaseAnalyzer):
         self._line_ann = sv.LineZoneAnnotator(thickness=2, text_thickness=1, text_scale=0.5)
         self._box_ann = sv.BoxAnnotator(thickness=2)
         self._prev_line = None
+        self._tracker = sv.ByteTrack(minimum_consecutive_frames=1)
 
     def reset(self):
         self._line_zone = None
@@ -39,6 +40,10 @@ class LineCrossingAnalyzer(BaseAnalyzer):
             end = sv.Point(x=line[1][0], y=line[1][1])
             self._line_zone = sv.LineZone(start=start, end=end)
             self._prev_line = line
+
+        # If detections lack tracker_id, use local ByteTrack
+        if getattr(detections, "tracker_id", None) is None:
+            detections = self._tracker.update_with_detections(detections=detections)
 
         self._line_zone.trigger(detections=detections)
         out = self._box_ann.annotate(scene=out, detections=detections)
