@@ -18,6 +18,8 @@ class AnalyzerMetadata:
     requires_tracker: bool
     requires_zones: bool
     mode: AnalyzerMode
+    geometry_type: Literal["polygon", "line", "dual_line", "none"] = "none"
+    example_params: dict | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -26,4 +28,6 @@ class AnalyzerMetadata:
             "requires_tracker": self.requires_tracker,
             "requires_zones": self.requires_zones,
             "mode": self.mode,
+            "geometry_type": self.geometry_type,
+            "example_params": self.example_params,
         }

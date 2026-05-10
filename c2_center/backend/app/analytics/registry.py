@@ -24,14 +24,14 @@ logger = logging.getLogger(__name__)
 #   "offline" — must only run in playground/offline analysis because it
 #               requires real-world calibration (m², BEV, distance constants)
 #   "both"    — runs anywhere
-_KNOWN_REQUIREMENTS: dict[str, tuple[bool, bool, AnalyzerMode]] = {
-    # slug -> (requires_tracker, requires_zones, mode)
-    "heatmap":               (False, False, "live"),
-    "absolute_count":        (False, True,  "live"),
-    "line_crossing":         (True,  True,  "live"),
-    "pce_density":           (False, True,  "offline"),
-    "area_occupancy":        (False, True,  "offline"),
-    "fundamental_equation":  (True,  True,  "offline"),
+# slug -> (requires_tracker, requires_zones, mode, geometry_type, example_params)
+_KNOWN_REQUIREMENTS: dict[str, tuple[bool, bool, AnalyzerMode, str, dict]] = {
+    "heatmap":               (False, False, "live",    "none",      {}),
+    "absolute_count":        (False, True,  "live",    "polygon",   {"roi_polygon": [[100, 100], [400, 100], [400, 400], [100, 400]]}),
+    "line_crossing":         (True,  True,  "live",    "dual_line", {"entry_line": [[100, 200], [400, 200]], "exit_line": [[100, 400], [400, 400]]}),
+    "pce_density":           (False, True,  "offline", "polygon",   {"roi_polygon": [[100, 100], [400, 100], [400, 400], [100, 400]], "road_length_km": 0.1}),
+    "area_occupancy":        (False, True,  "offline", "polygon",   {"roi_polygon": [[100, 100], [400, 100], [400, 400], [100, 400]]}),
+    "fundamental_equation":  (True,  True,  "offline", "dual_line", {"entry_line": [[100, 200], [400, 200]], "exit_line": [[100, 400], [400, 400]], "line_distance_km": 0.02}),
 }
 
 
@@ -76,8 +76,8 @@ class AnalyticsRegistry:
         out: list[AnalyzerMetadata] = []
         for slug, cls in self._classes.items():
             instance = cls()
-            req_tracker, req_zones, declared_mode = _KNOWN_REQUIREMENTS.get(
-                slug, (False, False, "both")
+            req_tracker, req_zones, declared_mode, geom, params = _KNOWN_REQUIREMENTS.get(
+                slug, (False, False, "both", "none", {})
             )
             if mode is not None and declared_mode not in (mode, "both"):
                 continue
@@ -88,6 +88,8 @@ class AnalyticsRegistry:
                     requires_tracker=req_tracker,
                     requires_zones=req_zones,
                     mode=declared_mode,
+                    geometry_type=geom,
+                    example_params=params
                 )
             )
         return out

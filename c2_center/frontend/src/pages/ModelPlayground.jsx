@@ -85,9 +85,24 @@ export default function ModelPlayground() {
     apiFetch('/api/analytics/algorithms').then(data => {
       const list = data || [];
       setAlgorithms(list);
-      if (list.length > 0) setActiveAlgo(list[0].slug);
+      if (list.length > 0) {
+        setActiveAlgo(list[0].slug);
+        if (list[0].example_params) {
+          setParamsJson(JSON.stringify(list[0].example_params, null, 2));
+        }
+      }
     }).catch(console.error);
   }, []);
+
+  const handleAlgoChange = (slug) => {
+    setActiveAlgo(slug);
+    const algo = algorithms.find(a => a.slug === slug);
+    if (algo && algo.example_params) {
+      setParamsJson(JSON.stringify(algo.example_params, null, 2));
+    }
+    setZones({});
+    setDrawMode(null);
+  };
 
   useEffect(() => {
     return () => {
@@ -463,7 +478,7 @@ export default function ModelPlayground() {
             
             <div className="control-group">
               <label className="control-label">Algorithm</label>
-              <select className="control-select" value={activeAlgo} onChange={e => setActiveAlgo(e.target.value)}>
+              <select className="control-select" value={activeAlgo} onChange={e => handleAlgoChange(e.target.value)}>
                 {algorithms.map(a => (
                   <option key={a.slug} value={a.slug}>
                     {a.name} {a.mode === 'offline' ? '(Offline)' : ''}
@@ -498,19 +513,30 @@ export default function ModelPlayground() {
         {runMode === 'analyze' && lockedFrameUrl && (
           <div className="glass-card controls-panel">
             <div className="section-title"><span>🖊</span> Draw Tools</div>
-            <button className={`btn ${drawMode === 'polygon' ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => setDrawMode(drawMode === 'polygon' ? null : 'polygon')} style={{ width: '100%' }}>
-              {drawMode === 'polygon' ? '✏️ Drawing Polygon...' : 'Draw ROI Polygon'}
-            </button>
-            <button className={`btn ${drawMode === 'entry_line' ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => setDrawMode(drawMode === 'entry_line' ? null : 'entry_line')} style={{ width: '100%' }}>
-              {drawMode === 'entry_line' ? '✏️ Drawing Entry...' : 'Draw Entry Line'}
-            </button>
-            <button className={`btn ${drawMode === 'exit_line' ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => setDrawMode(drawMode === 'exit_line' ? null : 'exit_line')} style={{ width: '100%' }}>
-              {drawMode === 'exit_line' ? '✏️ Drawing Exit...' : 'Draw Exit Line'}
-            </button>
-            <button className="btn btn-danger" onClick={clearZones} style={{ width: '100%' }}>
+            
+            {(algorithms.find(a => a.slug === activeAlgo)?.geometry_type === 'polygon') && (
+              <button className={`btn ${drawMode === 'polygon' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setDrawMode(drawMode === 'polygon' ? null : 'polygon')} style={{ width: '100%', marginBottom: 4 }}>
+                {drawMode === 'polygon' ? '✏️ Drawing ROI...' : 'Draw ROI Polygon'}
+              </button>
+            )}
+
+            {(['line', 'dual_line'].includes(algorithms.find(a => a.slug === activeAlgo)?.geometry_type)) && (
+              <>
+                <button className={`btn ${drawMode === 'entry_line' ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => setDrawMode(drawMode === 'entry_line' ? null : 'entry_line')} style={{ width: '100%', marginBottom: 4 }}>
+                  {drawMode === 'entry_line' ? '✏️ Drawing Entry...' : 'Draw Entry Line'}
+                </button>
+                {algorithms.find(a => a.slug === activeAlgo)?.geometry_type === 'dual_line' && (
+                  <button className={`btn ${drawMode === 'exit_line' ? 'btn-primary' : 'btn-ghost'}`}
+                    onClick={() => setDrawMode(drawMode === 'exit_line' ? null : 'exit_line')} style={{ width: '100%', marginBottom: 4 }}>
+                    {drawMode === 'exit_line' ? '✏️ Drawing Exit...' : 'Draw Exit Line'}
+                  </button>
+                )}
+              </>
+            )}
+
+            <button className="btn btn-danger" onClick={clearZones} style={{ width: '100%', marginTop: 8 }}>
               Clear All Zones
             </button>
           </div>

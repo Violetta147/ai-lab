@@ -17,40 +17,80 @@ class LineCrossingAnalyzer(BaseAnalyzer):
     def slug(self): return "line_crossing"
 
     def __init__(self):
-        self._line_zone: sv.LineZone | None = None
-        self._line_ann = sv.LineZoneAnnotator(thickness=2, text_thickness=1, text_scale=0.5)
+        self._entry_zone: sv.LineZone | None = None
+        self._exit_zone: sv.LineZone | None = None
+        # Green for entry, Red for exit
+        self._entry_ann = sv.LineZoneAnnotator(thickness=2, text_thickness=1, text_scale=0.5, color=sv.Color.from_hex("#00FF00"))
+        self._exit_ann = sv.LineZoneAnnotator(thickness=2, text_thickness=1, text_scale=0.5, color=sv.Color.from_hex("#FF0000"))
         self._box_ann = sv.BoxAnnotator(thickness=2)
-        self._prev_line = None
+        self._prev_entry = None
+        self._prev_exit = None
         self._tracker = sv.ByteTrack(minimum_consecutive_frames=1)
 
     def reset(self):
-        self._line_zone = None
-        self._prev_line = None
+        self._entry_zone = None
+        self._exit_zone = None
+        self._prev_entry = None
+        self._prev_exit = None
 
     def process(self, frame, detections, params):
-        line = params.get("entry_line")  # [[x1,y1],[x2,y2]]
+        entry_line = params.get("entry_line")  # [[x1,y1],[x2,y2]]
+        exit_line = params.get("exit_line")    # [[x1,y1],[x2,y2]]
         out = frame.copy()
 
-        if line is None:
+        if entry_line is None and exit_line is None:
             return AnalysisResult(out, {"in_count": 0, "out_count": 0, "method": self.slug})
 
-        # Recreate LineZone if line changed
-        if line != self._prev_line:
-            start = sv.Point(x=line[0][0], y=line[0][1])
-            end = sv.Point(x=line[1][0], y=line[1][1])
-            self._line_zone = sv.LineZone(start=start, end=end)
-            self._prev_line = line
+        # Recreate Entry Zone if changed
+        if entry_line != self._prev_entry:
+            if entry_line:
+                start = sv.Point(x=entry_line[0][0], y=entry_line[0][1])
+                end = sv.Point(x=entry_line[1][0], y=entry_line[1][1])
+                self._entry_zone = sv.LineZone(start=start, end=end, triggering_anchors=[sv.Position.BOTTOM_CENTER])
+            else:
+                self._entry_zone = None
+            self._prev_entry = entry_line
+
+        # Recreate Exit Zone if changed
+        if exit_line != self._prev_exit:
+            if exit_line:
+                start = sv.Point(x=exit_line[0][0], y=exit_line[0][1])
+                end = sv.Point(x=exit_line[1][0], y=exit_line[1][1])
+                self._exit_zone = sv.LineZone(start=start, end=end, triggering_anchors=[sv.Position.BOTTOM_CENTER])
+            else:
+                self._exit_zone = None
+            self._prev_exit = exit_line
 
         # If detections lack tracker_id, use local ByteTrack
         if getattr(detections, "tracker_id", None) is None:
             detections = self._tracker.update_with_detections(detections=detections)
 
-        self._line_zone.trigger(detections=detections)
+        if self._entry_zone:
+            self._entry_zone.trigger(detections=detections)
+        if self._exit_zone:
+            self._exit_zone.trigger(detections=detections)
+
         out = self._box_ann.annotate(scene=out, detections=detections)
-        out = self._line_ann.annotate(frame=out, line_counter=self._line_zone)
+        
+        if self._entry_zone:
+            out = self._entry_ann.annotate(frame=out, line_counter=self._entry_zone)
+        if self._exit_zone:
+            out = self._exit_ann.annotate(frame=out, line_counter=self._exit_zone)
+
+        # Metrics: in_count comes from entry_zone crossing, out_count from exit_zone
+        # Or if it's a single line, sv.LineZone handles both.
+        # To satisfy the user's specific request about separate entry/exit lines:
+        in_c = self._entry_zone.in_count if self._entry_zone else 0
+        out_c = self._exit_zone.out_count if self._exit_zone else 0
+        
+        # If user only provided one line (e.g. entry_line), sv.LineZone.in_count and out_count
+        # represent both directions on THAT line.
+        if entry_line and not exit_line:
+            in_c = self._entry_zone.in_count
+            out_c = self._entry_zone.out_count
 
         return AnalysisResult(out, {
-            "in_count": self._line_zone.in_count,
-            "out_count": self._line_zone.out_count,
+            "in_count": in_c,
+            "out_count": out_c,
             "method": self.slug,
         })

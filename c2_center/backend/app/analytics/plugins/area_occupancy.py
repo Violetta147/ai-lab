@@ -12,6 +12,16 @@ import supervision as sv
 from app.analytics.base import AnalysisResult, BaseAnalyzer
 
 
+import os
+import json
+
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), "occupancy_config.json")
+DEFAULT_THRESHOLDS = {
+    "NORMAL": 20,
+    "HEAVY": 40,
+    "CONGESTED": 60
+}
+
 class AreaOccupancyAnalyzer(BaseAnalyzer):
     """
     Computes road occupancy by transforming vehicle bounding boxes
@@ -30,6 +40,17 @@ class AreaOccupancyAnalyzer(BaseAnalyzer):
 
     def __init__(self) -> None:
         self._box_annotator = sv.BoxAnnotator(thickness=2)
+        self._thresholds = self._load_config()
+
+    def _load_config(self):
+        if os.path.exists(CONFIG_PATH):
+            try:
+                with open(CONFIG_PATH, "r") as f:
+                    data = json.load(f)
+                    return data.get("thresholds", DEFAULT_THRESHOLDS)
+            except Exception:
+                return DEFAULT_THRESHOLDS
+        return DEFAULT_THRESHOLDS
 
     def process(
         self,
@@ -101,11 +122,12 @@ class AreaOccupancyAnalyzer(BaseAnalyzer):
         annotated = self._box_annotator.annotate(scene=annotated, detections=det_in_roi)
         cv2.polylines(annotated, [roi_int], True, (0, 0, 255), 2)
 
-        # Color-coded status
-        if occupancy_pct > 40:
+        # Color-coded status using custom thresholds
+        t = self._thresholds
+        if occupancy_pct > t.get("CONGESTED", 60):
             status_color = (0, 0, 255)  # Red — congested
             status_text = "CONGESTED"
-        elif occupancy_pct > 20:
+        elif occupancy_pct > t.get("HEAVY", 40):
             status_color = (0, 165, 255)  # Orange — heavy
             status_text = "HEAVY"
         else:
