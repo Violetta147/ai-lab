@@ -41,6 +41,9 @@ class AreaOccupancyAnalyzer(BaseAnalyzer):
     def __init__(self) -> None:
         self._box_annotator = sv.BoxAnnotator(thickness=2)
         self._thresholds = self._load_config()
+        # Cache homography matrix to avoid recomputing every frame
+        self._cached_roi_key: tuple | None = None
+        self._cached_matrix: np.ndarray | None = None
 
     def _load_config(self):
         if os.path.exists(CONFIG_PATH):
@@ -85,8 +88,12 @@ class AreaOccupancyAnalyzer(BaseAnalyzer):
             dtype=np.float32,
         )
 
-        # Compute homography matrix
-        perspective_matrix = cv2.getPerspectiveTransform(src_pts, dst_pts)
+        # Cache homography — only recompute when ROI changes
+        roi_key = tuple(tuple(pt) for pt in roi_polygon)
+        if roi_key != self._cached_roi_key:
+            self._cached_matrix = cv2.getPerspectiveTransform(src_pts, dst_pts)
+            self._cached_roi_key = roi_key
+        perspective_matrix = self._cached_matrix
         total_bev_pixels = self.BEV_SIZE * self.BEV_SIZE
 
         # BEV canvas
@@ -136,9 +143,18 @@ class AreaOccupancyAnalyzer(BaseAnalyzer):
 
         # HUD
         cv2.rectangle(annotated, (10, 10), (500, 70), (0, 0, 0), -1)
+        
+        display_text = f"Occupancy: {occupancy_pct:.1f}% | {status_text}"
+        if not det_in_roi and occupancy_pct == 0.0:
+            # Check if we've ever seen detections
+            if not getattr(self, "_ever_seen_detections", False):
+                display_text = "Occupancy: Initializing..."
+        else:
+            self._ever_seen_detections = True
+
         cv2.putText(
             annotated,
-            f"Occupancy: {occupancy_pct:.1f}% — {status_text}",
+            display_text,
             (20, 50),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.8,

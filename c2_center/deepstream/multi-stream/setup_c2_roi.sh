@@ -51,7 +51,7 @@ mkdir -p "${WORK_DIR}/debug_payloads"
 echo "[C2] ROI Version — Laptop A IP: ${LAPTOP_A_IP}, Sources: ${NUM_SOURCES}"
 
 # --- Validation ---
-[ ! -f "${MODEL_ENGINE_FILE}" ] && echo "[ERROR] Missing: ${MODEL_ENGINE_FILE}" && exit 1
+[ ! -f "${MODEL_ONNX_FILE}" ] && echo "[ERROR] Missing ONNX: ${MODEL_ONNX_FILE}" && exit 1
 [ ! -f "${MODEL_LABELS_FILE}" ] && echo "[ERROR] Missing: ${MODEL_LABELS_FILE}" && exit 1
 [ ! -f "${CUSTOM_LIB_Y26}" ] && echo "[ERROR] Missing: ${CUSTOM_LIB_Y26}" && exit 1
 
@@ -88,7 +88,7 @@ labelfile-path=${MODEL_LABELS_FILE}
 batch-size=${INFER_BATCH_SIZE}
 network-mode=0
 num-detected-classes=${MODEL_NUM_CLASSES}
-interval=2
+interval=3
 gie-unique-id=1
 process-mode=1
 network-type=0

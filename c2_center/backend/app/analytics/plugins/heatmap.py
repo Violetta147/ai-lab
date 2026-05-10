@@ -22,6 +22,12 @@ class HeatmapAnalyzer(BaseAnalyzer):
         self._heatmap = sv.HeatMapAnnotator(radius=40, opacity=0.6)
 
     def process(self, frame, detections, params):
+        # Reset heatmap if resolution changes to avoid supervision shape mismatch
+        h, w = frame.shape[:2]
+        if not hasattr(self, "_last_res") or self._last_res != (h, w):
+            self.reset()
+            self._last_res = (h, w)
+
         out = self._heatmap.annotate(scene=frame.copy(), detections=detections)
         # Build per-class counts
         labels_map = params.get("labels_map", {})
