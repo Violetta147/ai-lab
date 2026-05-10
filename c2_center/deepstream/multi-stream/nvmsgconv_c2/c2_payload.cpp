@@ -86,8 +86,8 @@ static NvDsPayload* generate_json_payload(NvDsMsg2pCtx *ctx, int classId, int tr
     gsize length;
     gchar *json_str = json_generator_to_data(gen, &length);
 
-    // DEBUG: Print to terminal
-    g_print("[C2-DEBUG] Generated Payload (%d bytes): %s\n", (int)length, json_str);
+    // DEBUG: Uncomment for payload inspection
+    // g_print("[C2-DEBUG] Generated Payload (%d bytes): %s\n", (int)length, json_str);
 
     NvDsPayload *payload = (NvDsPayload *) g_malloc0(sizeof(NvDsPayload));
     payload->payload = json_str;

@@ -1,23 +1,68 @@
 import { useState, useEffect, useCallback } from 'react';
-import TrafficChart from '../components/TrafficChart';
 import { useWebSocket, apiFetch } from '../hooks/useWebSocket';
+
+/* ── Metric definitions per algorithm ──────────────────────────── */
+const ALGO_METRICS = {
+  heatmap: [
+    { key: 'vehicle_count', label: 'Vehicles', format: v => v ?? '—' },
+  ],
+  absolute_count: [
+    { key: 'vehicle_count', label: 'In ROI', format: v => v ?? '—' },
+  ],
+  line_crossing: [
+    { key: 'entries',   label: 'Entries',   format: v => v ?? '—' },
+    { key: 'exits',     label: 'Exits',     format: v => v ?? '—' },
+    { key: 'net_count', label: 'Net Count', format: v => v ?? '—' },
+  ],
+  area_occupancy: [
+    { key: 'occupancy_pct',  label: 'Occupancy %',  format: v => v != null ? `${v.toFixed(1)}%` : '—' },
+    { key: 'vehicles_in_roi', label: 'In ROI',      format: v => v ?? '—' },
+    { key: 'status',         label: 'Status',        format: v => v || '—' },
+  ],
+  pce_density: [
+    { key: 'pce_density', label: 'PCE/km',  format: v => v != null ? v.toFixed(0) : '—' },
+    { key: 'vehicle_count', label: 'Vehicles', format: v => v ?? '—' },
+  ],
+  fundamental_equation: [
+    { key: 'flow_q',    label: 'Flow (veh/h)', format: v => v != null ? v.toFixed(0) : '—' },
+    { key: 'avg_speed', label: 'Speed (km/h)', format: v => v != null ? v.toFixed(1) : '—' },
+    { key: 'density_k', label: 'Density',       format: v => v != null ? v.toFixed(1) : '—' },
+    { key: 'status',    label: 'Status',         format: v => v || '—' },
+  ],
+};
+
+/* Default fallback metrics: render whatever keys are in stats */
+function buildFallbackMetrics(stats) {
+  const skip = new Set(['method', 'algorithm']);
+  return Object.entries(stats)
+    .filter(([k]) => !skip.has(k))
+    .map(([k, v]) => ({
+      key: k,
+      label: k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+      value: typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(2)) : (v ?? '—'),
+    }));
+}
+
+/* ── Status color helper ──────────────────────────────────────── */
+function statusColor(val) {
+  if (!val || val === '—') return 'var(--text-muted)';
+  const s = String(val).toUpperCase();
+  if (s === 'NORMAL' || s === 'FREE') return 'var(--accent-green)';
+  if (s === 'HEAVY' || s === 'SLOW') return 'var(--accent-amber)';
+  return 'var(--accent-red)';
+}
 
 export default function DeepAnalysis() {
   const [streams, setStreams] = useState([]);
   const [activeStream, setActiveStream] = useState('');
-  
-  // Algorithms state
   const [algorithms, setAlgorithms] = useState([]);
-  const [activeAlgo, setActiveAlgo] = useState('heatmap'); // Match backend default
-  
-
+  const [activeAlgo, setActiveAlgo] = useState('heatmap');
   const [frame, setFrame] = useState(null);
   const [stats, setStats] = useState({});
-  const [chartData, setChartData] = useState([]);
+  const [classCounts, setClassCounts] = useState({});
   const [health, setHealth] = useState(null);
 
   useEffect(() => {
-    // Fetch streams
     apiFetch('/api/streams')
       .then(data => {
         const list = data || [];
@@ -29,17 +74,26 @@ export default function DeepAnalysis() {
         setActiveStream('stream_1');
       });
 
-    // Fetch live-compatible algorithms
-    apiFetch('/api/analytics/algorithms?mode=live')
+    // Fetch ALL algorithms (not just live) — let backend reject offline on PUT
+    apiFetch('/api/analytics/algorithms')
       .then(data => {
         setAlgorithms(data || []);
-        // If heatmap isn't available for some reason, fallback to first
         if (data?.length > 0 && !data.find(a => a.slug === 'heatmap')) {
-           setActiveAlgo(data[0].slug);
+          setActiveAlgo(data[0].slug);
         }
       })
       .catch(console.error);
   }, []);
+
+  // Fetch the currently active algorithm when stream changes
+  useEffect(() => {
+    if (!activeStream) return;
+    apiFetch(`/api/analytics/algorithm/${activeStream}`)
+      .then(data => {
+        if (data?.algorithm) setActiveAlgo(data.algorithm);
+      })
+      .catch(() => {});
+  }, [activeStream]);
 
   useEffect(() => {
     let timer;
@@ -67,15 +121,19 @@ export default function DeepAnalysis() {
   // Stats WS
   const handleStatsMsg = useCallback((msg) => {
     if (msg.type === 'stats') {
-      setStats(msg.data || {});
-      setChartData(prev => {
-        const next = [...prev, {
-          time: new Date().toLocaleTimeString(),
-          count: msg.data?.vehicle_count || msg.data?.vehicles_in_roi || 0,
-          flow: msg.data?.flow_q || 0,
-        }];
-        return next.slice(-120);
-      });
+      const d = msg.data || {};
+      setStats(d);
+
+      // Update active algo from stats if backend provides it
+      if (d.algorithm) setActiveAlgo(d.algorithm);
+
+      // Extract per-class counts if available
+      if (d.class_counts) {
+        setClassCounts(d.class_counts);
+      } else if (d.vehicle_count !== undefined) {
+        // Fallback: just show total
+        setClassCounts({ total: d.vehicle_count });
+      }
     }
   }, []);
   const statsSocket = useWebSocket(activeStream ? `/ws/stats/${activeStream}` : null, {
@@ -88,41 +146,71 @@ export default function DeepAnalysis() {
   // Switch algorithm
   const switchAlgo = async (slug) => {
     setActiveAlgo(slug);
+    setStats({});
+    setClassCounts({});
     if (activeStream) {
       try {
-        await apiFetch(`/api/analytics/algorithm/${activeStream}`, {
+        const resp = await apiFetch(`/api/analytics/algorithm/${activeStream}`, {
           method: 'PUT', body: JSON.stringify({ algorithm: slug }),
         });
-      } catch (e) {}
+      } catch (e) {
+        console.error('Algorithm switch failed:', e);
+      }
     }
   };
 
-
+  // Build dynamic metrics
+  const algoMetrics = ALGO_METRICS[activeAlgo];
+  const metricItems = algoMetrics
+    ? algoMetrics.map(m => ({
+        key: m.key,
+        label: m.label,
+        value: m.format(stats[m.key]),
+      }))
+    : buildFallbackMetrics(stats);
 
   return (
-    <div className="split-layout">
-      <div className="split-main">
+    <div className="deep-analysis-layout">
+      <div className="da-main">
         {health && (!health.kafka_connected || health.status !== 'ok') && (
-          <div className="glass-card" style={{ marginBottom: 12, padding: '10px 14px', border: '1px solid rgba(239, 68, 68, 0.35)', color: 'var(--accent-red)' }}>
-            Live pipeline warning: {health.kafka_connected ? 'Kafka connected but backend reports a degraded state' : 'Kafka / DeepStream feed is not connected'}
+          <div className="glass-card da-alert da-alert-error">
+            ⚠️ {health.kafka_connected ? 'Backend degraded' : 'Kafka / DeepStream not connected'}
           </div>
         )}
         {(videoStatus !== 'connected' || statsStatus !== 'connected') && (
-          <div className="glass-card" style={{ marginBottom: 12, padding: '10px 14px', border: '1px solid rgba(245, 158, 11, 0.35)', color: 'var(--accent-amber)' }}>
-            WebSocket status: video={videoStatus}, stats={statsStatus}
+          <div className="glass-card da-alert da-alert-warn">
+            🔌 WS: video={videoStatus}, stats={statsStatus}
           </div>
         )}
-        {/* Video feed */}
-        <div className="glass-card video-canvas-container" style={{ flex: 1 }}>
+
+        {/* Video feed — takes all available space */}
+        <div className="glass-card da-video-container">
           {frame ? <img src={frame} alt="stream" /> : (
-            <div style={{ aspectRatio: '1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
-              Select a stream...
+            <div className="da-video-placeholder">
+              <div style={{ fontSize: 48, marginBottom: 12 }}>📡</div>
+              <div>Waiting for stream...</div>
             </div>
           )}
         </div>
 
-        {/* Traffic chart */}
-        <TrafficChart data={chartData} />
+        {/* Per-class detection counts — compact bar */}
+        <div className="glass-card da-class-counts">
+          <div className="section-title"><span>🏷</span> Detections</div>
+          <div className="da-class-list">
+            {Object.keys(classCounts).length > 0 ? (
+              Object.entries(classCounts).map(([cls, count]) => (
+                <div key={cls} className="da-class-item">
+                  <span className="da-class-name">{cls}</span>
+                  <span className="da-class-count">{count}</span>
+                </div>
+              ))
+            ) : (
+              <div className="da-class-item" style={{ color: 'var(--text-muted)' }}>
+                No detections
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="split-sidebar">
@@ -138,34 +226,30 @@ export default function DeepAnalysis() {
         <div className="glass-card controls-panel">
           <div className="section-title"><span>🎛</span> Algorithm</div>
           <select className="control-select" value={activeAlgo} onChange={e => switchAlgo(e.target.value)}>
-            {algorithms.map(a => <option key={a.slug} value={a.slug}>{a.name}</option>)}
+            {algorithms.map(a => (
+              <option key={a.slug} value={a.slug}>
+                {a.name}{a.mode === 'offline' ? ' (offline)' : ''}
+              </option>
+            ))}
           </select>
         </div>
 
-
-
-        {/* Live Dashboard */}
+        {/* Dynamic Live Metrics */}
         <div className="glass-card controls-panel">
           <div className="section-title"><span>📊</span> Live Metrics</div>
+          <div className="da-algo-badge">{activeAlgo.replace(/_/g, ' ')}</div>
           <div className="metrics-grid">
-            <div className="metric-card">
-              <div className="metric-value">{stats.flow_q?.toFixed(0) || stats.vehicle_count || '—'}</div>
-              <div className="metric-label">{stats.flow_q !== undefined ? 'Flow (veh/h)' : 'Vehicles'}</div>
-            </div>
-            <div className="metric-card">
-              <div className="metric-value">{stats.avg_speed?.toFixed(1) || stats.occupancy_pct?.toFixed(1) || '—'}</div>
-              <div className="metric-label">{stats.avg_speed !== undefined ? 'Speed (km/h)' : 'Occupancy %'}</div>
-            </div>
-            <div className="metric-card">
-              <div className="metric-value">{stats.density_k?.toFixed(1) || stats.pce_density?.toFixed(0) || '—'}</div>
-              <div className="metric-label">{stats.pce_density !== undefined ? 'PCE/km' : 'Density'}</div>
-            </div>
-            <div className="metric-card">
-              <div className="metric-value" style={{ fontSize: 14, color: stats.status === 'NORMAL' ? 'var(--accent-green)' : stats.status === 'HEAVY' ? 'var(--accent-amber)' : 'var(--accent-red)' }}>
-                {stats.status || '—'}
+            {metricItems.map(m => (
+              <div key={m.key} className="metric-card">
+                <div
+                  className="metric-value"
+                  style={m.key === 'status' ? { fontSize: 14, color: statusColor(m.value), background: 'none', WebkitTextFillColor: 'unset' } : {}}
+                >
+                  {m.value}
+                </div>
+                <div className="metric-label">{m.label}</div>
               </div>
-              <div className="metric-label">Status</div>
-            </div>
+            ))}
           </div>
         </div>
       </div>

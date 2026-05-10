@@ -51,6 +51,9 @@ class PipelineManager:
         self._stats_subs: list[StatsSubscriber] = []
         self._running = False
         self._stats_interval_sec = 0.5  # 2 Hz
+        self._log_interval_sec = 5.0  # Debug log every 5s
+        self._last_log_at: dict[str, float] = {}
+        self._sync_counts: dict[str, int] = {}  # objects synced per stream
 
     def on_frame(self, callback: FrameSubscriber) -> None:
         """Subscribe to annotated-frame events."""
@@ -113,6 +116,20 @@ class PipelineManager:
 
                 detections = metadata_to_detections(objects)
                 params = self._build_params(stream_id, detections)
+
+                # Periodic debug logging
+                self._sync_counts[stream_id] = self._sync_counts.get(stream_id, 0) + len(objects)
+                now_log = time.time()
+                last_log = self._last_log_at.get(stream_id, 0)
+                if now_log - last_log >= self._log_interval_sec:
+                    algo = self._dispatcher.get_active_slug(stream_id) or "none"
+                    logger.info(
+                        "[%s] algo=%s | synced_objects=%d | detections=%d",
+                        stream_id, algo, self._sync_counts[stream_id], len(detections),
+                    )
+                    self._sync_counts[stream_id] = 0
+                    self._last_log_at[stream_id] = now_log
+
                 result = self._dispatcher.run(stream_id, frame, detections, params)
 
                 await self._emit_frame(stream_id, result.annotated_frame, result.metrics)
@@ -120,6 +137,8 @@ class PipelineManager:
                 now = time.time()
                 if now - last_stats_at >= self._stats_interval_sec:
                     last_stats_at = now
+                    # Inject active algorithm so frontend can render dynamic metrics
+                    result.metrics["algorithm"] = self._dispatcher.get_active_slug(stream_id) or "heatmap"
                     await self._emit_stats(stream_id, result.metrics)
 
                 elapsed = time.time() - t0

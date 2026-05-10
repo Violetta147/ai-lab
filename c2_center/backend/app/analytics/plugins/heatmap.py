@@ -23,4 +23,15 @@ class HeatmapAnalyzer(BaseAnalyzer):
 
     def process(self, frame, detections, params):
         out = self._heatmap.annotate(scene=frame.copy(), detections=detections)
-        return AnalysisResult(out, {"vehicle_count": len(detections), "method": self.slug})
+        # Build per-class counts
+        labels_map = params.get("labels_map", {})
+        class_counts = {}
+        if detections.class_id is not None:
+            for cid in detections.class_id:
+                name = labels_map.get(int(cid), f"class_{cid}")
+                class_counts[name] = class_counts.get(name, 0) + 1
+        return AnalysisResult(out, {
+            "vehicle_count": len(detections),
+            "class_counts": class_counts,
+            "method": self.slug,
+        })

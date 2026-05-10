@@ -169,12 +169,20 @@ class AreaOccupancyAnalyzer(BaseAnalyzer):
                 1,
             )
 
+        # Per-class counts
+        class_counts = {}
+        if det_in_roi.class_id is not None:
+            for cid in det_in_roi.class_id:
+                name = labels_map.get(int(cid), f"class_{cid}")
+                class_counts[name] = class_counts.get(name, 0) + 1
+
         return AnalysisResult(
             annotated_frame=annotated,
             metrics={
                 "occupancy_pct": round(occupancy_pct, 2),
                 "status": status_text,
                 "vehicles_in_roi": len(det_in_roi),
+                "class_counts": class_counts,
                 "method": self.slug,
             },
         )

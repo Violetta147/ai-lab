@@ -53,4 +53,10 @@ def get_router(pipeline):
             raise HTTPException(400, str(e))
         return {"status": "ok", "stream_id": stream_id, "algorithm": algo}
 
+    @router.get("/algorithm/{stream_id}")
+    async def get_algorithm(stream_id: str):
+        """Return the currently active algorithm for a stream."""
+        slug = pipeline.analytics_dispatcher.get_active_slug(stream_id)
+        return {"stream_id": stream_id, "algorithm": slug or "heatmap"}
+
     return router

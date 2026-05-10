@@ -127,12 +127,20 @@ class AbsoluteCountAnalyzer(BaseAnalyzer):
             2,
         )
 
+        # Per-class counts
+        class_counts = {}
+        if det_in_roi.class_id is not None:
+            for cid in det_in_roi.class_id:
+                name = labels_map.get(int(cid), f"class_{cid}")
+                class_counts[name] = class_counts.get(name, 0) + 1
+
         return AnalysisResult(
             annotated_frame=annotated,
             metrics={
                 "vehicle_count": count,
                 "density_k": round(density_k, 2),
                 "road_length_km": road_length_km,
+                "class_counts": class_counts,
                 "method": self.slug,
             },
         )

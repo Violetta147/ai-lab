@@ -22,12 +22,12 @@ def reg() -> AnalyticsRegistry:
 
 def test_live_mode_filter_returns_only_live_analyzers(reg):
     live = {m.slug for m in reg.list_all(mode="live")}
-    assert live == {"heatmap", "absolute_count", "line_crossing"}
+    assert live == {"heatmap", "absolute_count", "line_crossing", "area_occupancy"}
 
 
 def test_offline_mode_filter_returns_only_offline_analyzers(reg):
     offline = {m.slug for m in reg.list_all(mode="offline")}
-    assert offline == {"pce_density", "area_occupancy", "fundamental_equation"}
+    assert offline == {"pce_density", "fundamental_equation"}
 
 
 def test_no_mode_filter_returns_all_six(reg):

@@ -69,8 +69,15 @@ class LivePipelineHandle:
             logger.exception("Kafka consumer stop failed")
         self.video_reader.stop()
 
+    def __post_init__(self):
+        self._source_counter = 0
+
     def add_stream(self, stream_id: str, rtsp_url: str) -> bool:
         """Add a stream end-to-end: video reader, stream manager, pipeline task."""
+        # Register mapping: DeepStream numeric ID -> backend semantic ID
+        self.kafka_consumer.set_stream_mapping(self._source_counter, stream_id)
+        self._source_counter += 1
+
         added = self.video_reader.add_stream(stream_id, rtsp_url)
         # Even if reader rejects (already exists), we still want stream_manager+pipeline aware.
         self.stream_manager.add_stream(stream_id)

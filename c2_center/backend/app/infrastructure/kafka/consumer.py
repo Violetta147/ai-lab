@@ -30,10 +30,18 @@ class KafkaConsumerService:
         self._task: asyncio.Task | None = None
         # Per-stream metadata buffers: stream_id -> list of (timestamp, metadata)
         self.buffers: dict[str, list[tuple[float, dict]]] = defaultdict(list)
+        # Mapping from numeric source_id (as string) to semantic stream_id
+        # e.g. {"0": "cam_01", "1": "muahe"}
+        self.stream_id_map: dict[str, str] = {}
         self._lock = asyncio.Lock()
         self._running = False
         # Track streams we've already warned about missing tracking_id to avoid log spam
         self._warned_missing_tracker: set[str] = set()
+
+    def set_stream_mapping(self, source_index: int, stream_id: str) -> None:
+        """Register that DeepStream source 'i' corresponds to backend 'stream_id'."""
+        self.stream_id_map[str(source_index)] = stream_id
+        logger.info("Kafka mapping registered: source %d -> %s", source_index, stream_id)
 
     async def start(self) -> None:
         """Start the Kafka consumer background task."""
@@ -77,7 +85,8 @@ class KafkaConsumerService:
                     data = msg.value
                     # Map source_id (int) or stream_id (str) to a consistent string key
                     raw_stream_id = data.get("stream_id") or data.get("source_id", "unknown")
-                    stream_id = str(raw_stream_id)
+                    # Resolve semantic stream_id if mapping exists
+                    stream_id = self.stream_id_map.get(str(raw_stream_id), str(raw_stream_id))
                     
                     timestamp = float(data.get("timestamp", 0))
 

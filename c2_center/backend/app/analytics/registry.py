@@ -30,7 +30,7 @@ _KNOWN_REQUIREMENTS: dict[str, tuple[bool, bool, AnalyzerMode, str, dict]] = {
     "absolute_count":        (False, True,  "live",    "polygon",   {"roi_polygon": [[100, 100], [400, 100], [400, 400], [100, 400]]}),
     "line_crossing":         (True,  True,  "live",    "dual_line", {"entry_line": [[100, 200], [400, 200]], "exit_line": [[100, 400], [400, 400]]}),
     "pce_density":           (False, True,  "offline", "polygon",   {"roi_polygon": [[100, 100], [400, 100], [400, 400], [100, 400]], "road_length_km": 0.1}),
-    "area_occupancy":        (False, True,  "offline", "polygon",   {"roi_polygon": [[100, 100], [400, 100], [400, 400], [100, 400]]}),
+    "area_occupancy":        (False, True,  "live",    "polygon",   {"roi_polygon": [[100, 100], [400, 100], [400, 400], [100, 400]]}),
     "fundamental_equation":  (True,  True,  "offline", "dual_line", {"entry_line": [[100, 200], [400, 200]], "exit_line": [[100, 400], [400, 400]], "line_distance_km": 0.02}),
 }
 

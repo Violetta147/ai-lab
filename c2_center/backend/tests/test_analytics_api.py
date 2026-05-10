@@ -17,6 +17,11 @@ class _FakeDispatcher:
     def set_algorithm(self, stream_id: str, slug: str) -> None:
         self.last_set = (stream_id, slug)
 
+    def get_active_slug(self, stream_id: str) -> str | None:
+        if self.last_set and self.last_set[0] == stream_id:
+            return self.last_set[1]
+        return None
+
 
 class _FakePipeline:
     def __init__(self) -> None:
@@ -49,7 +54,7 @@ def test_list_algorithms_filter_live(client):
     resp = client.get("/api/analytics/algorithms?mode=live")
     assert resp.status_code == 200
     slugs = {item["slug"] for item in resp.json()}
-    assert slugs == {"heatmap", "absolute_count", "line_crossing"}
+    assert slugs == {"heatmap", "absolute_count", "line_crossing", "area_occupancy"}
     for item in resp.json():
         assert item["mode"] == "live"
 
@@ -58,7 +63,7 @@ def test_list_algorithms_filter_offline(client):
     resp = client.get("/api/analytics/algorithms?mode=offline")
     assert resp.status_code == 200
     slugs = {item["slug"] for item in resp.json()}
-    assert slugs == {"pce_density", "area_occupancy", "fundamental_equation"}
+    assert slugs == {"pce_density", "fundamental_equation"}
 
 
 def test_list_algorithms_invalid_mode_rejected(client):
