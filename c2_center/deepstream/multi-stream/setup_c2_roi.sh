@@ -25,9 +25,11 @@ resolve_ds_dir() {
     echo "${candidate_dir}" | tr -d '\r\n '
 }
 
-DS_DIR="$(resolve_ds_dir)"
-SAMPLES_DIR=$(echo "${DS_DIR}/samples" | tr -d '\r\n ')
-[ ! -d "${SAMPLES_DIR}" ] && SAMPLES_DIR="/opt/nvidia/deepstream/deepstream-6.0/samples"
+DS_DIR="/opt/nvidia/deepstream/deepstream-6.0"
+SAMPLES_DIR="${DS_DIR}/samples"
+
+# Ensure the plugin is in a standard search path for dlopen
+cp "${WORK_DIR}/libnvds_msgconv_c2.so" /usr/lib/libnvds_msgconv_c2.so 2>/dev/null || true
 
 MODEL_NAME=$(echo "${MODEL_NAME:-yolo_all_exports_p2n_fine-tuning2_best}" | tr -d '\r\n ')
 MODEL_ENGINE_FILE=$(echo "${WORK_DIR}/${MODEL_NAME}.engine" | tr -d '\r\n ')
@@ -39,9 +41,12 @@ KAFKA_BROKER=$(echo "${LAPTOP_A_IP}:9092" | tr -d '\r\n ')
 RTSP_BASE_PORT=$(echo "${RTSP_BASE_PORT:-8554}" | tr -d '\r\n ')
 
 INFER_CFG="${WORK_DIR}/config_infer_c2.txt"
-APP_CFG="${WORK_DIR}/deepstream_c2_roi.txt"
-KAFKA_CFG="${WORK_DIR}/cfg_kafka.txt"
 ANALYTICS_CFG="${WORK_DIR}/config_nvdsanalytics_roi.txt"
+KAFKA_CFG="${WORK_DIR}/cfg_kafka.txt"
+NVMSGCONV_CFG="${WORK_DIR}/nvmsgconv_c2_config.txt"
+APP_CFG="${WORK_DIR}/deepstream_c2_roi.txt"
+
+mkdir -p "${WORK_DIR}/debug_payloads"
 
 echo "[C2] ROI Version — Laptop A IP: ${LAPTOP_A_IP}, Sources: ${NUM_SOURCES}"
 
@@ -125,12 +130,13 @@ done
 # CONFIG: nvmsgconv & Kafka
 # =============================================================================
 # Write files FIRST so realpath works
-cat > "${WORK_DIR}/nvmsgconv_c2_config.txt" << EOF
+# Write files FIRST so realpath works
+cat > "${NVMSGCONV_CFG}" << EOF
 [property]
-payload-type=256
-
-[custom]
-msg2p-lib=${WORK_DIR}/libnvds_msgconv_c2.so
+payload-type=257
+msg2p-lib=/usr/lib/libnvds_msgconv_c2.so
+msg2p-newapi=1
+frame-interval=30
 EOF
 
 cat > "${KAFKA_CFG}" << EOF
@@ -191,10 +197,13 @@ config-file=${ANALYTICS_CFG_DST}
 enable=1
 type=6
 gpu-id=0
-msg-conv-config=${NVMSGCONV_CFG_DST}
-msg-conv-payload-type=0
-msg-broker-proto-lib=${DS_DIR}/lib/libnvds_kafka_proto.so
+msg-conv-payload-type=257
+msg-conv-msg2p-lib=/usr/lib/libnvds_msgconv_c2.so
+msg-conv-msg2p-new-api=1
+msg-conv-frame-interval=30
+msg-broker-proto-lib=/opt/nvidia/deepstream/deepstream-6.0/lib/libnvds_kafka_proto.so
 msg-broker-conn-str=${LAPTOP_A_IP};9092;${KAFKA_TOPIC}
+msg-broker-config=${KAFKA_CFG_DST}
 sync=0
 EOF
 
@@ -221,4 +230,11 @@ echo "[C2] Starting deepstream-app (ROI Mode)..."
 # Strip all Windows \r characters from generated configs before running
 sed -i 's/\r//g' "${INFER_CFG}" "${APP_CFG}" "${KAFKA_CFG}" "${ANALYTICS_CFG}" "${NVMSGCONV_CFG_DST}" 2>/dev/null || true
 
-deepstream-app -c "${APP_CFG}"
+# Try deepstream-test5-app first, fallback to deepstream-app
+if command -v deepstream-test5-app &> /dev/null; then
+    echo "[C2] Using deepstream-test5-app for robust custom payload support..."
+    deepstream-test5-app -c "${APP_CFG}"
+else
+    echo "[WARNING] deepstream-test5-app not found. Falling back to deepstream-app (Custom Payload may fail)..."
+    deepstream-app -c "${APP_CFG}"
+fi

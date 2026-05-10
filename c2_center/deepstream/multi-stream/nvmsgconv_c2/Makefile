@@ -1,17 +1,20 @@
-# Makefile for nvmsgconv_c2 payload builder
-# Build inside DeepStream SDK environment (Linux/WSL2) where g++ and DeepStream
-# headers/libs are available. This Makefile is a template.
+CXX:= g++
+SRCS:= c2_payload.cpp
+OBJS:= $(SRCS:.cpp=.o)
+TARGET:= libnvds_msgconv_c2.so
 
-CXX=g++
-CXXFLAGS=-fPIC -O2 -std=c++17
-LDFLAGS=-shared
-TARGET=libnvds_msgconv_c2.so
-SOURCES=c2_payload.cpp
+# DeepStream 6.0 Paths
+DS_SDK_ROOT:= /opt/nvidia/deepstream/deepstream-6.0
+GLIB_CFLAGS:= $(shell pkg-config --cflags glib-2.0 json-glib-1.0)
+GLIB_LIBS:= $(shell pkg-config --libs glib-2.0 json-glib-1.0)
+
+CXXFLAGS:= -fPIC -O2 -std=c++17 -I$(DS_SDK_ROOT)/sources/includes $(GLIB_CFLAGS)
+LDFLAGS:= -shared $(GLIB_LIBS)
 
 all: $(TARGET)
 
-$(TARGET): $(SOURCES)
-	$(CXX) $(CXXFLAGS) -o $@ $(SOURCES) $(LDFLAGS)
+$(TARGET): $(SRCS)
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
 
 clean:
-	rm -f $(TARGET) *.o
+	rm -f $(TARGET) $(OBJS)

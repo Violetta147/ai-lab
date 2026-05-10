@@ -1,144 +1,105 @@
-/*
- * nvmsgconv_c2 — payload builder template.
- *
- * This file is intentionally SDK-friendly but still self-contained enough to
- * show the exact JSON shape the backend expects. In a real DeepStream build,
- * replace the placeholder extraction in `build_payload_from_meta()` with code
- * that reads NvDsFrameMeta / NvDsObjectMeta and fills the JSON fields.
- */
-
+#include <iostream>
+#include <string>
+#include <glib.h>
+#include <json-glib/json-glib.h>
+#include "nvds_msgapi.h"
+#include "nvdsmeta_schema.h"
 #include "c2_payload.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+extern "C" {
 
+/**
+ * Called when the library is loaded. 
+ * Creates a context for the message conversion.
+ */
+NvDsMsg2pCtx* nvds_msg2p_ctx_create(const gchar *file, NvDsPayloadType type) {
+    NvDsMsg2pCtx *ctx = (NvDsMsg2pCtx *) g_malloc0(sizeof(NvDsMsg2pCtx));
+    ctx->sensorId = 0;
+    return ctx;
+}
+
+/**
+ * Called when the library is unloaded.
+ */
+void nvds_msg2p_ctx_destroy(NvDsMsg2pCtx *ctx) {
+    g_free(ctx);
+}
+
+#include "nvdsmeta.h"
+
+// DeepStream 6.0 New API internal struct
 typedef struct {
-    const char *stream_id;
-    unsigned long long frame_id;
-    double timestamp;
-} c2_frame_info_t;
+  void *objMeta;
+  void *frameMeta;
+  gchar *mediaType;
+} NvDsMsg2pMetaInfo;
 
-typedef struct {
-    int tracking_id;
-    int class_id;
-    const char *class_name;
-    int x;
-    int y;
-    int w;
-    int h;
-    double confidence;
-} c2_object_t;
+/**
+ * Helper to generate the common C2 JSON structure
+ */
+static NvDsPayload* generate_json_payload(NvDsMsg2pCtx *ctx, int classId, int trackingId) {
+    JsonBuilder *builder = json_builder_new();
+    json_builder_begin_object(builder);
 
-static char *dup_json(const char *text, int *payload_len) {
-    size_t len = strlen(text);
-    char *out = (char *)malloc(len + 1);
-    if (!out) {
-        return NULL;
-    }
-    memcpy(out, text, len + 1);
-    if (payload_len) {
-        *payload_len = (int)len;
-    }
-    return out;
+    json_builder_set_member_name(builder, "message_type");
+    json_builder_add_string_value(builder, "c2_event");
+
+    json_builder_set_member_name(builder, "class_id");
+    json_builder_add_int_value(builder, classId);
+
+    json_builder_set_member_name(builder, "tracking_id");
+    json_builder_add_int_value(builder, trackingId);
+
+    json_builder_end_object(builder);
+
+    JsonGenerator *gen = json_generator_new();
+    JsonNode *root = json_builder_get_root(builder);
+    json_generator_set_root(gen, root);
+
+    gsize length;
+    gchar *json_str = json_generator_to_data(gen, &length);
+
+    // DEBUG: Print to terminal
+    g_print("[C2-DEBUG] Generated Payload (%d bytes): %s\n", (int)length, json_str);
+
+    NvDsPayload *payload = (NvDsPayload *) g_malloc0(sizeof(NvDsPayload));
+    payload->payload = json_str;
+    payload->payloadSize = (int)length;
+
+    g_object_unref(gen);
+    g_object_unref(builder);
+
+    return payload;
 }
 
-static int build_payload_from_meta(const c2_frame_info_t *frame,
-                                   const c2_object_t *objects,
-                                   size_t object_count,
-                                   char **payload,
-                                   int *payload_len) {
-    if (!frame || !payload || !payload_len) {
-        return -1;
-    }
-
-    char buffer[8192];
-    int written = snprintf(
-        buffer,
-        sizeof(buffer),
-        "{"
-        "\"stream_id\":\"%s\","
-        "\"frame_id\":%llu,"
-        "\"timestamp\":\"%.3f\","
-        "\"objects\":[",
-        frame->stream_id ? frame->stream_id : "unknown",
-        frame->frame_id,
-        frame->timestamp);
-    if (written < 0 || (size_t)written >= sizeof(buffer)) {
-        return -1;
-    }
-
-    size_t offset = (size_t)written;
-    for (size_t i = 0; i < object_count; ++i) {
-        const c2_object_t *obj = &objects[i];
-        int n = snprintf(
-            buffer + offset,
-            sizeof(buffer) - offset,
-            "%s{"
-            "\"tracking_id\":%d,"
-            "\"class_id\":%d,"
-            "\"class_name\":\"%s\","
-            "\"bbox\":{\"x\":%d,\"y\":%d,\"w\":%d,\"h\":%d},"
-            "\"confidence\":%.4f"
-            "}",
-            (i == 0) ? "" : ",",
-            obj->tracking_id,
-            obj->class_id,
-            obj->class_name ? obj->class_name : "unknown",
-            obj->x,
-            obj->y,
-            obj->w,
-            obj->h,
-            obj->confidence);
-        if (n < 0 || (size_t)n >= sizeof(buffer) - offset) {
-            return -1;
-        }
-        offset += (size_t)n;
-    }
-
-    int tail = snprintf(buffer + offset, sizeof(buffer) - offset, "]}");
-    if (tail < 0 || (size_t)tail >= sizeof(buffer) - offset) {
-        return -1;
-    }
-
-    return (*payload = dup_json(buffer, payload_len)) ? 0 : -1;
+/**
+ * The core logic: converts DeepStream event metadata into a custom JSON string.
+ */
+NvDsPayload* nvds_msg2p_generate(NvDsMsg2pCtx *ctx, NvDsEventMsgMeta *meta) {
+    return generate_json_payload(ctx, meta->objClassId, (int)meta->trackingId);
 }
 
-int nvds_msg2p_init(void **userdata) {
-    *userdata = NULL;
-    return 0;
+/**
+ * NEW API: Called when msg-conv-msg2p-new-api=1 is set.
+ */
+NvDsPayload* nvds_msg2p_generate_new(NvDsMsg2pCtx *ctx, void *metadataInfo) {
+    NvDsMsg2pMetaInfo *info = (NvDsMsg2pMetaInfo *)metadataInfo;
+    NvDsObjectMeta *objMeta = (NvDsObjectMeta *)info->objMeta;
+
+    if (objMeta) {
+        return generate_json_payload(ctx, objMeta->class_id, (int)objMeta->object_id);
+    }
+    return NULL;
 }
 
-void nvds_msg2p_deinit(void *userdata) {
-    (void)userdata;
+/**
+ * Called after the payload has been sent to release memory.
+ */
+void nvds_msg2p_release(NvDsMsg2pCtx *ctx, NvDsPayload *payload) {
+    if (payload) {
+        if (payload->payload) g_free(payload->payload);
+        g_free(payload);
+    }
 }
 
-int nvds_msg2p_generate(void *userdata, const char *input_meta, char **payload, int *payload_len) {
-    (void)userdata;
-    (void)input_meta;
-
-    /*
-     * Placeholder values to prove the expected schema. In the real DeepStream
-     * integration, parse `input_meta` / frame metadata and fill these structs.
-     */
-    c2_frame_info_t frame = {
-        .stream_id = "cam_8554",
-        .frame_id = 1,
-        .timestamp = 0.000,
-    };
-
-    c2_object_t objects[1] = {
-        {
-            .tracking_id = 45,
-            .class_id = 0,
-            .class_name = "car",
-            .x = 100,
-            .y = 200,
-            .w = 150,
-            .h = 80,
-            .confidence = 0.8900,
-        },
-    };
-
-    return build_payload_from_meta(&frame, objects, 1, payload, payload_len);
-}
+} // extern "C"
