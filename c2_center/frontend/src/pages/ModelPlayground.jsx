@@ -49,7 +49,6 @@ export default function ModelPlayground() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [file, setFile] = useState(null);
   const [resultImage, setResultImage] = useState(null);
-  const [resultVideo, setResultVideo] = useState(null);
   const [resultVideoUrl, setResultVideoUrl] = useState(null);
   const [loading, setLoading] = useState(false);
   const [info, setInfo] = useState(null);
@@ -69,6 +68,7 @@ export default function ModelPlayground() {
   const [currentFrameTime, setCurrentFrameTime] = useState(0);
   const [totalDuration, setTotalDuration] = useState(0);
   const [lockedFrameUrl, setLockedFrameUrl] = useState(null);
+  const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 });
   const [drawMode, setDrawMode] = useState(null); // 'polygon' | 'entry_line' | 'exit_line'
   const [zones, setZones] = useState({});
   const previewVideoRef = useRef(null);
@@ -153,12 +153,14 @@ export default function ModelPlayground() {
     ctx.drawImage(vid, 0, 0, canvas.width, canvas.height);
     const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
     setLockedFrameUrl(dataUrl);
+    setNaturalSize({ width: vid.videoWidth, height: vid.videoHeight });
     setDrawMode(null);
     setZones({});
   };
 
   const unlockFrame = () => {
     setLockedFrameUrl(null);
+    setNaturalSize({ width: 0, height: 0 });
     setDrawMode(null);
     setZones({});
   };
@@ -196,26 +198,34 @@ export default function ModelPlayground() {
 
   // --- Download handler ---
   const handleDownload = () => {
-    const a = document.createElement('a');
-    if (resultVideoUrl) {
-      a.href = resultVideoUrl;
-      a.download = 'analysis_result.mp4';
-    } else if (resultImage) {
-      a.href = resultImage;
-      a.download = 'analysis_result.jpg';
-    } else {
-      return;
-    }
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    if (!resultVideoUrl && !resultImage) return;
+
+    const isVideo = !!resultVideoUrl;
+    const extension = isVideo ? '.mp4' : '.jpg';
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const filename = `analysis_${timestamp}${extension}`;
+
+    const link = document.createElement('a');
+    link.href = resultVideoUrl || resultImage;
+    link.download = filename;
+    
+    // Some browsers require the link to be in the DOM
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    
+    link.click();
+    
+    // Clean up
+    setTimeout(() => {
+      document.body.removeChild(link);
+    }, 100);
   };
 
   const handleRun = async () => {
     if (!file) return;
     setLoading(true);
     setResultImage(null);
-    setResultVideo(null);
+    setResultVideoUrl(null);
     setMetrics(null);
     if (resultVideoUrl) {
       URL.revokeObjectURL(resultVideoUrl);
@@ -278,7 +288,6 @@ export default function ModelPlayground() {
         const blob = base64ToBlob(b64Data, mime);
         const objectUrl = URL.createObjectURL(blob);
         setResultVideoUrl(objectUrl);
-        setResultVideo(objectUrl);
         setInfo(`${framesCount} frames processed — model: ${data.model}`);
       } else if (b64Data) {
         setResultImage(`data:image/jpeg;base64,${b64Data}`);
@@ -307,7 +316,6 @@ export default function ModelPlayground() {
 
   const clearResult = () => {
     setResultImage(null);
-    setResultVideo(null);
     setMetrics(null);
     if (resultVideoUrl) {
       URL.revokeObjectURL(resultVideoUrl);
@@ -317,7 +325,7 @@ export default function ModelPlayground() {
   };
 
   // Determine what to show in the main pane
-  const showResult = resultVideo || resultImage;
+  const showResult = resultVideoUrl || resultImage;
   const showSourcePreview = !showResult && sourceVideoUrl && !lockedFrameUrl;
   const showLockedFrame = !showResult && lockedFrameUrl;
   const showDropZone = !showResult && !showSourcePreview && !showLockedFrame;
@@ -328,10 +336,10 @@ export default function ModelPlayground() {
         <div className="glass-card" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           
           {/* Result video */}
-          {resultVideo ? (
+          {resultVideoUrl ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
               <video
-                src={resultVideo}
+                src={resultVideoUrl}
                 controls
                 autoPlay
                 muted
@@ -372,7 +380,13 @@ export default function ModelPlayground() {
             /* Locked frame with drawing overlay */
             <div className="video-canvas-container" style={{ flex: 1, position: 'relative' }}>
               <img src={lockedFrameUrl} alt="Locked frame" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-              <PolygonDrawer mode={drawMode} onComplete={handleZoneComplete} existingZones={zones} />
+              <PolygonDrawer 
+                mode={drawMode} 
+                onComplete={handleZoneComplete} 
+                existingZones={zones} 
+                naturalWidth={naturalSize.width}
+                naturalHeight={naturalSize.height}
+              />
               <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', gap: 6 }}>
                 <button className="btn btn-ghost" onClick={unlockFrame} style={{ padding: '4px 10px', fontSize: 12, background: 'rgba(0,0,0,0.6)' }}>🔓 Unlock</button>
               </div>
