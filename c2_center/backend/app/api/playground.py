@@ -1,7 +1,8 @@
-"""C2 Center — Playground API (offline detection on uploaded files)."""
+"""C2 Center — Playground API (offline detection + analytics on uploaded files)."""
 
 import base64
 import asyncio
+import json
 
 import cv2
 import tempfile
@@ -13,9 +14,14 @@ from fastapi import APIRouter, File, Form, UploadFile, HTTPException
 
 import logging
 
+from app.analytics.registry import registry as analytics_registry
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/playground", tags=["playground"])
+
+# Hard cap to keep playground responsive on Jetson Nano-grade hardware.
+_PLAYGROUND_MAX_FRAMES = 300
 
 
 def _normalize_01(value: float, default: float) -> float:
@@ -436,5 +442,205 @@ def get_router(model_registry):
             logger.info("Playground returning image response: image_size=%d detections=%d",
                        len(b64) if b64 else 0, count)
             return response_obj
+
+    @router.post("/analyze")
+    async def analyze(
+        file: UploadFile = File(...),
+        algorithm: str = Form(...),
+        confidence: float = Form(0.25),
+        overlap: float = Form(0.45),
+        params_json: str = Form("{}"),
+    ):
+        """Run a registered analyzer on an uploaded image or video.
+
+        This is the offline counterpart to the live RTSP pipeline — users can
+        run any analyzer (live OR offline-tagged) here against a calibrated
+        sample, supplying their own ROI / line / distance constants via
+        `params_json`.
+
+        Form fields:
+            file: image (jpg/png/...) or video (mp4/...) file
+            algorithm: registered analyzer slug (see GET /api/analytics/algorithms)
+            confidence, overlap: YOLO inference thresholds
+            params_json: JSON string with analyzer params, e.g.
+                {"roi_polygon": [[10,10],[100,10],[100,100],[10,100]],
+                 "road_length_km": 0.05}
+        """
+        try:
+            return await _analyze_impl(
+                file, algorithm, confidence, overlap, params_json
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception("Playground analyze endpoint error: %s", e)
+            raise HTTPException(500, f"Playground analyze error: {e}")
+
+    async def _analyze_impl(
+        file: UploadFile,
+        algorithm: str,
+        confidence: float,
+        overlap: float,
+        params_json: str,
+    ):
+        # 1. Validate analyzer slug
+        if not analytics_registry.has(algorithm):
+            raise HTTPException(
+                400,
+                f"Unknown algorithm '{algorithm}'. "
+                f"Available: {analytics_registry.slugs()}",
+            )
+        analyzer_cls = analytics_registry.get(algorithm)
+        analyzer = analyzer_cls()
+
+        # 2. Parse params JSON
+        try:
+            user_params: dict = json.loads(params_json) if params_json else {}
+        except json.JSONDecodeError as e:
+            raise HTTPException(400, f"Invalid params_json: {e}")
+        if not isinstance(user_params, dict):
+            raise HTTPException(400, "params_json must decode to an object")
+
+        # 3. Resolve active model (reuse the same lazy-load logic as /detect)
+        active_model_name = model_registry.active_model_name
+        if active_model_name is None:
+            models = model_registry.list_models()
+            if not models:
+                raise HTTPException(400, "No active model. Upload one to backend/ml_models/")
+            model_registry.active_model_name = models[0].name
+            active_model_name = model_registry.active_model_name
+
+        model = model_registry.get_active_model() or model_registry.get_model(active_model_name)
+
+        # 4. Inject labels_map (analyzers like absolute_count need it for HUD text)
+        try:
+            labels = model_registry.get_labels(active_model_name)
+            user_params.setdefault("labels_map", {i: name for i, name in enumerate(labels)})
+        except ValueError:
+            user_params.setdefault("labels_map", {})
+
+        # 5. Decode upload (image first, fallback to video)
+        contents = await file.read()
+        nparr = np.frombuffer(contents, np.uint8)
+        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+        is_video = image is None
+        temp_input_path: str | None = None
+        cap = None
+        if is_video:
+            suffix = os.path.splitext(file.filename or "")[1] or ".mp4"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tf:
+                tf.write(contents)
+                temp_input_path = tf.name
+            cap = cv2.VideoCapture(temp_input_path)
+            if not cap.isOpened():
+                try:
+                    os.unlink(temp_input_path)
+                except Exception:
+                    pass
+                raise HTTPException(400, "Could not open uploaded video")
+
+        conf = _normalize_01(confidence, 0.25)
+        iou = _normalize_01(overlap, 0.45)
+
+        def _run_analyzer_on_frame(frame: np.ndarray):
+            """Inference + analyzer.process for a single frame."""
+            results = model.predict(frame, conf=conf, iou=iou, verbose=False)[0]
+            detections = sv.Detections.from_ultralytics(results)
+            return analyzer.process(frame, detections, user_params)
+
+        def _execute():
+            if not is_video:
+                result = _run_analyzer_on_frame(image)
+                _, buf = cv2.imencode(".jpg", result.annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+                return {
+                    "kind": "image",
+                    "data_b64": base64.b64encode(buf).decode("utf-8"),
+                    "mime": "image/jpeg",
+                    "frames_processed": 1,
+                    "metrics": result.metrics,
+                }
+
+            fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+            if fps <= 1e-3:
+                fps = 25.0
+            ok, first_frame = cap.read()
+            if not ok or first_frame is None:
+                return {
+                    "kind": "video",
+                    "data_b64": "",
+                    "mime": "video/mp4",
+                    "frames_processed": 0,
+                    "metrics": {},
+                }
+            h, w = first_frame.shape[:2]
+            writer, out_path, mime = _create_video_writer(temp_input_path, fps, w, h)
+            if writer is None:
+                return {
+                    "kind": "video",
+                    "data_b64": "",
+                    "mime": "video/mp4",
+                    "frames_processed": 0,
+                    "metrics": {},
+                }
+
+            frames_done = 0
+            last_metrics: dict = {}
+            try:
+                pending = first_frame
+                while frames_done < _PLAYGROUND_MAX_FRAMES:
+                    if pending is not None:
+                        frame = pending
+                        pending = None
+                    else:
+                        ok, frame = cap.read()
+                        if not ok:
+                            break
+                    result = _run_analyzer_on_frame(frame)
+                    writer.write(result.annotated_frame)
+                    last_metrics = result.metrics
+                    frames_done += 1
+            finally:
+                try:
+                    writer.release()
+                except Exception:
+                    pass
+                try:
+                    cap.release()
+                except Exception:
+                    pass
+
+            data_b64 = ""
+            try:
+                if os.path.exists(out_path) and os.path.getsize(out_path) > 100:
+                    with open(out_path, "rb") as f:
+                        data_b64 = base64.b64encode(f.read()).decode("utf-8")
+            except Exception as e:
+                logger.exception("Playground analyze: failed reading output video: %s", e)
+
+            for p in (out_path, temp_input_path):
+                try:
+                    if p and os.path.exists(p):
+                        os.unlink(p)
+                except Exception:
+                    pass
+
+            return {
+                "kind": "video",
+                "data_b64": data_b64,
+                "mime": mime or "video/mp4",
+                "frames_processed": frames_done,
+                "metrics": last_metrics,
+            }
+
+        result = await asyncio.to_thread(_execute)
+
+        return {
+            "algorithm": algorithm,
+            "model": active_model_name,
+            "used_confidence": conf,
+            "used_iou": iou,
+            **result,
+        }
 
     return router

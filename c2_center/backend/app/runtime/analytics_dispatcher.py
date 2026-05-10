@@ -17,7 +17,10 @@ from app.domain.analytics import AnalysisResult
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_ALGORITHM_SLUG = "absolute_count"
+# Default live analyzer for newly attached streams.
+# `heatmap` is chosen because it requires zero user-drawn calibration (no ROI,
+# no lines) and produces meaningful output the moment the first frame arrives.
+DEFAULT_ALGORITHM_SLUG = "heatmap"
 
 
 class AnalyticsDispatcher:
