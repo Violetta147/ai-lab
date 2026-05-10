@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import PolygonDrawer from '../components/PolygonDrawer';
 import TrafficChart from '../components/TrafficChart';
 import { useWebSocket, apiFetch } from '../hooks/useWebSocket';
 
@@ -11,8 +10,7 @@ export default function DeepAnalysis() {
   const [algorithms, setAlgorithms] = useState([]);
   const [activeAlgo, setActiveAlgo] = useState('heatmap'); // Match backend default
   
-  const [drawMode, setDrawMode] = useState(null); // 'polygon' | 'entry_line' | 'exit_line'
-  const [zones, setZones] = useState({});
+
   const [frame, setFrame] = useState(null);
   const [stats, setStats] = useState({});
   const [chartData, setChartData] = useState([]);
@@ -99,28 +97,7 @@ export default function DeepAnalysis() {
     }
   };
 
-  // Handle zone completion
-  const handleZoneComplete = async (points) => {
-    const key = drawMode === 'polygon' ? 'roi_polygon' :
-      drawMode === 'entry_line' ? 'entry_line' : 'exit_line';
-    const updated = { ...zones, [key]: points };
-    setZones(updated);
-    setDrawMode(null);
-    if (activeStream) {
-      try {
-        await apiFetch(`/api/zones/${activeStream}`, {
-          method: 'PUT', body: JSON.stringify(updated),
-        });
-      } catch (e) {}
-    }
-  };
 
-  const clearZones = async () => {
-    setZones({});
-    if (activeStream) {
-      try { await apiFetch(`/api/zones/${activeStream}`, { method: 'DELETE' }); } catch (e) {}
-    }
-  };
 
   return (
     <div className="split-layout">
@@ -135,14 +112,13 @@ export default function DeepAnalysis() {
             WebSocket status: video={videoStatus}, stats={statsStatus}
           </div>
         )}
-        {/* Video + Canvas overlay */}
+        {/* Video feed */}
         <div className="glass-card video-canvas-container" style={{ flex: 1 }}>
           {frame ? <img src={frame} alt="stream" /> : (
             <div style={{ aspectRatio: '1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
               Select a stream...
             </div>
           )}
-          <PolygonDrawer mode={drawMode} onComplete={handleZoneComplete} existingZones={zones} />
         </div>
 
         {/* Traffic chart */}
@@ -166,25 +142,7 @@ export default function DeepAnalysis() {
           </select>
         </div>
 
-        {/* Draw tools */}
-        <div className="glass-card controls-panel">
-          <div className="section-title"><span>🖊</span> Draw Tools</div>
-          <button className={`btn ${drawMode === 'polygon' ? 'btn-primary' : 'btn-ghost'}`}
-            onClick={() => setDrawMode(drawMode === 'polygon' ? null : 'polygon')} style={{ width: '100%' }}>
-            {drawMode === 'polygon' ? '✏️ Drawing Polygon...' : 'Draw ROI Polygon'}
-          </button>
-          <button className={`btn ${drawMode === 'entry_line' ? 'btn-primary' : 'btn-ghost'}`}
-            onClick={() => setDrawMode(drawMode === 'entry_line' ? null : 'entry_line')} style={{ width: '100%' }}>
-            {drawMode === 'entry_line' ? '✏️ Drawing Entry...' : 'Draw Entry Line'}
-          </button>
-          <button className={`btn ${drawMode === 'exit_line' ? 'btn-primary' : 'btn-ghost'}`}
-            onClick={() => setDrawMode(drawMode === 'exit_line' ? null : 'exit_line')} style={{ width: '100%' }}>
-            {drawMode === 'exit_line' ? '✏️ Drawing Exit...' : 'Draw Exit Line'}
-          </button>
-          <button className="btn btn-danger" onClick={clearZones} style={{ width: '100%' }}>
-            Clear All Zones
-          </button>
-        </div>
+
 
         {/* Live Dashboard */}
         <div className="glass-card controls-panel">

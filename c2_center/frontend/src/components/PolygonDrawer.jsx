@@ -82,7 +82,7 @@ export default function PolygonDrawer({ mode, onComplete, existingZones = {} }) 
     const x = Math.round(e.clientX - rect.left);
     const y = Math.round(e.clientY - rect.top);
 
-    if (mode === 'line') {
+    if (mode === 'line' || mode === 'entry_line' || mode === 'exit_line') {
       const newPoints = [...points, [x, y]];
       if (newPoints.length >= 2) {
         onComplete?.(newPoints.slice(0, 2));

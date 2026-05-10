@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import FileDropZone from '../components/FileDropZone';
 import DetectionControls from '../components/DetectionControls';
+import PolygonDrawer from '../components/PolygonDrawer';
 import { apiFetch, API_BASE } from '../hooks/useWebSocket';
 
 const DEFAULT_SETTINGS = {
@@ -63,6 +64,16 @@ export default function ModelPlayground() {
   const [activeAlgo, setActiveAlgo] = useState('');
   const [paramsJson, setParamsJson] = useState(DEFAULT_PARAMS);
 
+  // --- Frame extraction & drawing state ---
+  const [sourceVideoUrl, setSourceVideoUrl] = useState(null);
+  const [currentFrameTime, setCurrentFrameTime] = useState(0);
+  const [totalDuration, setTotalDuration] = useState(0);
+  const [lockedFrameUrl, setLockedFrameUrl] = useState(null);
+  const [drawMode, setDrawMode] = useState(null); // 'polygon' | 'entry_line' | 'exit_line'
+  const [zones, setZones] = useState({});
+  const previewVideoRef = useRef(null);
+  const canvasExtractRef = useRef(null);
+
   useEffect(() => {
     // Fetch available YOLO models
     apiFetch('/api/models').then(data => {
@@ -80,11 +91,125 @@ export default function ModelPlayground() {
 
   useEffect(() => {
     return () => {
-      if (resultVideoUrl) {
-        URL.revokeObjectURL(resultVideoUrl);
-      }
+      if (resultVideoUrl) URL.revokeObjectURL(resultVideoUrl);
+      if (sourceVideoUrl) URL.revokeObjectURL(sourceVideoUrl);
     };
-  }, [resultVideoUrl]);
+  }, [resultVideoUrl, sourceVideoUrl]);
+
+  // When a new file is set, check if it's a video and create a preview URL
+  useEffect(() => {
+    if (!file) {
+      setSourceVideoUrl(null);
+      setLockedFrameUrl(null);
+      setZones({});
+      return;
+    }
+    const isVideo = file.type.startsWith('video/');
+    if (isVideo) {
+      const url = URL.createObjectURL(file);
+      setSourceVideoUrl(url);
+      setLockedFrameUrl(null);
+      setZones({});
+    } else {
+      setSourceVideoUrl(null);
+      setLockedFrameUrl(null);
+      setZones({});
+    }
+  }, [file]);
+
+  // --- Frame stepping ---
+  const stepFrame = (direction) => {
+    const vid = previewVideoRef.current;
+    if (!vid) return;
+    const fps = 30;
+    const step = 1 / fps;
+    vid.currentTime = Math.max(0, Math.min(vid.duration, vid.currentTime + direction * step));
+    setCurrentFrameTime(vid.currentTime);
+  };
+
+  const handleVideoTimeUpdate = () => {
+    const vid = previewVideoRef.current;
+    if (vid) setCurrentFrameTime(vid.currentTime);
+  };
+
+  const handleVideoLoaded = () => {
+    const vid = previewVideoRef.current;
+    if (vid) {
+      setTotalDuration(vid.duration);
+      vid.pause();
+      vid.currentTime = 0;
+    }
+  };
+
+  // --- Lock frame for drawing ---
+  const lockFrame = () => {
+    const vid = previewVideoRef.current;
+    if (!vid) return;
+    vid.pause();
+    const canvas = canvasExtractRef.current;
+    canvas.width = vid.videoWidth;
+    canvas.height = vid.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(vid, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+    setLockedFrameUrl(dataUrl);
+    setDrawMode(null);
+    setZones({});
+  };
+
+  const unlockFrame = () => {
+    setLockedFrameUrl(null);
+    setDrawMode(null);
+    setZones({});
+  };
+
+  // --- Drawing zone complete handler ---
+  const handleZoneComplete = (points) => {
+    const key = drawMode === 'polygon' ? 'roi_polygon' :
+      drawMode === 'entry_line' ? 'entry_line' : 'exit_line';
+    const updated = { ...zones, [key]: points };
+    setZones(updated);
+    setDrawMode(null);
+
+    // Auto-update paramsJson with drawn zone data
+    try {
+      const current = JSON.parse(paramsJson);
+      current[key] = points;
+      setParamsJson(JSON.stringify(current, null, 2));
+    } catch {
+      // If JSON is invalid, create minimal JSON with zone data
+      setParamsJson(JSON.stringify({ [key]: points }, null, 2));
+    }
+  };
+
+  const clearZones = () => {
+    setZones({});
+    setDrawMode(null);
+    try {
+      const current = JSON.parse(paramsJson);
+      delete current.roi_polygon;
+      delete current.entry_line;
+      delete current.exit_line;
+      setParamsJson(JSON.stringify(current, null, 2));
+    } catch { /* noop */ }
+  };
+
+  // --- Download handler ---
+  const handleDownload = () => {
+    const a = document.createElement('a');
+    if (resultVideoUrl) {
+      a.href = resultVideoUrl;
+      a.download = 'analysis_result.mp4';
+    } else if (resultImage) {
+      a.href = resultImage;
+      a.download = 'analysis_result.jpg';
+    } else {
+      return;
+    }
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
 
   const handleRun = async () => {
     if (!file) return;
@@ -180,10 +305,29 @@ export default function ModelPlayground() {
     } catch (e) {}
   };
 
+  const clearResult = () => {
+    setResultImage(null);
+    setResultVideo(null);
+    setMetrics(null);
+    if (resultVideoUrl) {
+      URL.revokeObjectURL(resultVideoUrl);
+      setResultVideoUrl(null);
+    }
+    setInfo(null);
+  };
+
+  // Determine what to show in the main pane
+  const showResult = resultVideo || resultImage;
+  const showSourcePreview = !showResult && sourceVideoUrl && !lockedFrameUrl;
+  const showLockedFrame = !showResult && lockedFrameUrl;
+  const showDropZone = !showResult && !showSourcePreview && !showLockedFrame;
+
   return (
     <div className="split-layout">
       <div className="split-main">
         <div className="glass-card" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          
+          {/* Result video */}
           {resultVideo ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
               <video
@@ -199,6 +343,39 @@ export default function ModelPlayground() {
           ) : resultImage ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
               <img src={resultImage} alt="Analysis result" style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 'var(--radius-md)' }} />
+            </div>
+          ) : showSourcePreview ? (
+            /* Source video preview for frame stepping */
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+              <video
+                ref={previewVideoRef}
+                src={sourceVideoUrl}
+                muted
+                playsInline
+                onLoadedMetadata={handleVideoLoaded}
+                onTimeUpdate={handleVideoTimeUpdate}
+                style={{ maxWidth: '100%', maxHeight: 'calc(100% - 80px)', borderRadius: 'var(--radius-md)' }}
+              />
+              {/* Frame scrubbing controls */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12, padding: '8px 16px', background: 'rgba(0,0,0,0.3)', borderRadius: 'var(--radius-md)' }}>
+                <button className="btn btn-ghost" onClick={() => stepFrame(-10)} title="Back 10 frames" style={{ padding: '6px 10px', fontSize: 13 }}>⏪</button>
+                <button className="btn btn-ghost" onClick={() => stepFrame(-1)} title="Previous frame" style={{ padding: '6px 10px', fontSize: 13 }}>◀</button>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)', minWidth: 100, textAlign: 'center' }}>
+                  {currentFrameTime.toFixed(2)}s / {totalDuration.toFixed(2)}s
+                </span>
+                <button className="btn btn-ghost" onClick={() => stepFrame(1)} title="Next frame" style={{ padding: '6px 10px', fontSize: 13 }}>▶</button>
+                <button className="btn btn-ghost" onClick={() => stepFrame(10)} title="Forward 10 frames" style={{ padding: '6px 10px', fontSize: 13 }}>⏩</button>
+                <button className="btn btn-primary" onClick={lockFrame} style={{ padding: '6px 14px', fontSize: 13 }}>🔒 Lock Frame to Draw</button>
+              </div>
+            </div>
+          ) : showLockedFrame ? (
+            /* Locked frame with drawing overlay */
+            <div className="video-canvas-container" style={{ flex: 1, position: 'relative' }}>
+              <img src={lockedFrameUrl} alt="Locked frame" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              <PolygonDrawer mode={drawMode} onComplete={handleZoneComplete} existingZones={zones} />
+              <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', gap: 6 }}>
+                <button className="btn btn-ghost" onClick={unlockFrame} style={{ padding: '4px 10px', fontSize: 12, background: 'rgba(0,0,0,0.6)' }}>🔓 Unlock</button>
+              </div>
             </div>
           ) : (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -228,6 +405,9 @@ export default function ModelPlayground() {
             </div>
           )}
         </div>
+
+        {/* Hidden canvas for frame extraction */}
+        <canvas ref={canvasExtractRef} style={{ display: 'none' }} />
       </div>
 
       <div className="split-sidebar">
@@ -300,6 +480,28 @@ export default function ModelPlayground() {
           </div>
         )}
 
+        {/* Draw Tools — visible only when a frame is locked */}
+        {runMode === 'analyze' && lockedFrameUrl && (
+          <div className="glass-card controls-panel">
+            <div className="section-title"><span>🖊</span> Draw Tools</div>
+            <button className={`btn ${drawMode === 'polygon' ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setDrawMode(drawMode === 'polygon' ? null : 'polygon')} style={{ width: '100%' }}>
+              {drawMode === 'polygon' ? '✏️ Drawing Polygon...' : 'Draw ROI Polygon'}
+            </button>
+            <button className={`btn ${drawMode === 'entry_line' ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setDrawMode(drawMode === 'entry_line' ? null : 'entry_line')} style={{ width: '100%' }}>
+              {drawMode === 'entry_line' ? '✏️ Drawing Entry...' : 'Draw Entry Line'}
+            </button>
+            <button className={`btn ${drawMode === 'exit_line' ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setDrawMode(drawMode === 'exit_line' ? null : 'exit_line')} style={{ width: '100%' }}>
+              {drawMode === 'exit_line' ? '✏️ Drawing Exit...' : 'Draw Exit Line'}
+            </button>
+            <button className="btn btn-danger" onClick={clearZones} style={{ width: '100%' }}>
+              Clear All Zones
+            </button>
+          </div>
+        )}
+
         {/* Core Settings (applicable to both, but mostly detect) */}
         <div className="glass-card">
           <DetectionControls settings={settings} onChange={setSettings} runMode={runMode} />
@@ -311,20 +513,17 @@ export default function ModelPlayground() {
           {loading ? '⏳ Processing...' : (runMode === 'analyze' ? '🔬 Run Analysis' : '🚀 Run Detection')}
         </button>
 
-        {(resultImage || resultVideo) && (
-          <button className="btn btn-ghost" onClick={() => {
-            setResultImage(null);
-            setResultVideo(null);
-            setMetrics(null);
-            if (resultVideoUrl) {
-              URL.revokeObjectURL(resultVideoUrl);
-              setResultVideoUrl(null);
-            }
-            setInfo(null);
-          }}
-            style={{ width: '100%', marginTop: 8 }}>
-            Clear Result
-          </button>
+        {showResult && (
+          <>
+            <button className="btn btn-ghost" onClick={handleDownload}
+              style={{ width: '100%', marginTop: 8 }}>
+              ⬇️ Download Result
+            </button>
+            <button className="btn btn-ghost" onClick={clearResult}
+              style={{ width: '100%', marginTop: 4 }}>
+              Clear Result
+            </button>
+          </>
         )}
       </div>
     </div>
