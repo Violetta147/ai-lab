@@ -28,13 +28,19 @@ def metadata_to_detections(objects: list[dict]) -> sv.Detections:
     tracker_ids: list[int] = []
 
     for obj in objects:
-        bbox = obj.get("bbox", {})
-        x = float(bbox.get("x", 0))
-        y = float(bbox.get("y", 0))
-        w = float(bbox.get("w", 0))
-        h = float(bbox.get("h", 0))
-
-        xyxy.append([x, y, x + w, y + h])
+        bbox = obj.get("bbox")
+        if isinstance(bbox, list) and len(bbox) == 4:
+            # Format: [x1, y1, x2, y2]
+            xyxy.append([float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])])
+        elif isinstance(bbox, dict):
+            # Format: {"x": ..., "y": ..., "w": ..., "h": ...}
+            x = float(bbox.get("x", 0))
+            y = float(bbox.get("y", 0))
+            w = float(bbox.get("w", 0))
+            h = float(bbox.get("h", 0))
+            xyxy.append([x, y, x + w, y + h])
+        else:
+            xyxy.append([0.0, 0.0, 0.0, 0.0])
         confs.append(float(obj.get("confidence", 0.5)))
         class_ids.append(int(obj.get("class_id", 0)))
 

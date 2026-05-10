@@ -133,6 +133,15 @@ EOF
 NVMSGCONV_CFG_DST="${WORK_DIR}/nvmsgconv_c2_config.txt"
 MSGCONV_LIB_DST="${WORK_DIR}/libnvds_msgconv_c2.so"
 
+echo "[C2] Writing msgconv config..."
+cat > "${NVMSGCONV_CFG_DST}" << EOF
+[property]
+payload-type=257
+msg2p-lib=/usr/lib/libnvds_msgconv_c2.so
+msg2p-newapi=1
+frame-interval=1
+EOF
+
 echo "[C2] Writing app config..."
 cat > "${APP_CFG}" << EOF
 [application]
@@ -180,8 +189,10 @@ config-file=${ANALYTICS_CFG}
 enable=1
 type=6
 msg-conv-config=${NVMSGCONV_CFG_DST}
-msg-conv-payload-type=256
-msg-conv-msg2p-lib=${MSGCONV_LIB_DST}
+msg-conv-payload-type=257
+msg-conv-msg2p-lib=/usr/lib/libnvds_msgconv_c2.so
+msg-conv-msg2p-new-api=1
+msg-conv-frame-interval=1
 msg-broker-proto-lib=${DS_DIR}/lib/libnvds_kafka_proto.so
 msg-broker-conn-str=${LAPTOP_A_IP};9092;${KAFKA_TOPIC}
 msg-broker-config=${KAFKA_CFG}

@@ -96,8 +96,8 @@ class AnalyticsRegistry:
 
     def get_mode(self, slug: str) -> AnalyzerMode:
         """Return the declared mode for an analyzer (defaults to 'both')."""
-        _, _, mode = _KNOWN_REQUIREMENTS.get(slug, (False, False, "both"))
-        return mode
+        reqs = _KNOWN_REQUIREMENTS.get(slug, (False, False, "both", "none", {}))
+        return reqs[2]
 
     def discover(self, package_name: str) -> int:
         """

@@ -136,7 +136,7 @@ cat > "${NVMSGCONV_CFG}" << EOF
 payload-type=257
 msg2p-lib=/usr/lib/libnvds_msgconv_c2.so
 msg2p-newapi=1
-frame-interval=30
+frame-interval=1
 EOF
 
 cat > "${KAFKA_CFG}" << EOF
@@ -200,7 +200,7 @@ gpu-id=0
 msg-conv-payload-type=257
 msg-conv-msg2p-lib=/usr/lib/libnvds_msgconv_c2.so
 msg-conv-msg2p-new-api=1
-msg-conv-frame-interval=30
+msg-conv-frame-interval=1
 msg-broker-proto-lib=/opt/nvidia/deepstream/deepstream-6.0/lib/libnvds_kafka_proto.so
 msg-broker-conn-str=${LAPTOP_A_IP};9092;${KAFKA_TOPIC}
 msg-broker-config=${KAFKA_CFG_DST}

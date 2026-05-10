@@ -75,16 +75,19 @@ class KafkaConsumerService:
                     break
                 try:
                     data = msg.value
-                    stream_id = data.get("stream_id", "unknown")
+                    # Map source_id (int) or stream_id (str) to a consistent string key
+                    raw_stream_id = data.get("stream_id") or data.get("source_id", "unknown")
+                    stream_id = str(raw_stream_id)
+                    
                     timestamp = float(data.get("timestamp", 0))
 
-                    # Basic schema validation: ensure objects list contains expected fields
+                    # Basic schema validation
                     objs = data.get("objects", [])
                     if objs:
                         sample = objs[0]
                         if "tracking_id" not in sample and stream_id not in self._warned_missing_tracker:
                             logger.warning(
-                                "Kafka message missing 'tracking_id' for stream %s — analytics may fail. Sample: %s",
+                                "Kafka message missing 'tracking_id' for stream %s. Sample: %s",
                                 stream_id,
                                 str(sample)[:200],
                             )
@@ -93,12 +96,12 @@ class KafkaConsumerService:
                     async with self._lock:
                         buffer = self.buffers[stream_id]
                         buffer.append((timestamp, data))
-                        # Keep buffer bounded — discard old entries
-                        if len(buffer) > 300:
-                            self.buffers[stream_id] = buffer[-200:]
+                        # Keep buffer bounded (5 seconds at 30fps = 150 entries, but let's keep more)
+                        if len(buffer) > 1000:
+                            self.buffers[stream_id] = buffer[-500:]
 
                 except Exception:
-                    logger.exception("Error processing Kafka message")
+                    logger.exception("Error processing Kafka message: %s", msg.value if 'msg' in locals() else "unknown")
 
         except asyncio.CancelledError:
             pass

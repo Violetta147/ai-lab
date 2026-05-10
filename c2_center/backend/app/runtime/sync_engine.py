@@ -50,14 +50,24 @@ class SyncEngine:
 
         frame, frame_ts = result
 
-        metadata = await self.kafka_consumer.pop_nearest(
-            stream_id=stream_id,
-            target_ts=frame_ts,
-            tolerance_ms=settings.SYNC_TOLERANCE_MS,
-        )
+        all_objects = []
+        # Aggregate multiple metadata entries (e.g. one per object) within tolerance
+        while True:
+            metadata = await self.kafka_consumer.pop_nearest(
+                stream_id=stream_id,
+                target_ts=frame_ts,
+                tolerance_ms=settings.SYNC_TOLERANCE_MS,
+            )
+            if not metadata:
+                break
+            
+            all_objects.extend(metadata.get("objects", []))
+            
+            # Safety break to prevent infinite loop if pop_nearest logic fails
+            if len(all_objects) > 1000:
+                break
 
-        objects_list = metadata.get("objects", []) if metadata else []
-        return frame, objects_list
+        return frame, all_objects
 
     def get_stream_ids(self) -> list[str]:
         """Return all configured stream IDs."""

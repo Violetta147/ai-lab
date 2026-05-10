@@ -37,18 +37,45 @@ typedef struct {
 /**
  * Helper to generate the common C2 JSON structure
  */
-static NvDsPayload* generate_json_payload(NvDsMsg2pCtx *ctx, int classId, int trackingId) {
+static NvDsPayload* generate_json_payload(NvDsMsg2pCtx *ctx, int classId, int trackingId, int streamId, unsigned int frameNum, double timestamp, NvOSD_RectParams *rect) {
     JsonBuilder *builder = json_builder_new();
     json_builder_begin_object(builder);
 
     json_builder_set_member_name(builder, "message_type");
     json_builder_add_string_value(builder, "c2_event");
 
+    json_builder_set_member_name(builder, "stream_id");
+    json_builder_add_string_value(builder, std::to_string(streamId).c_str());
+
+    json_builder_set_member_name(builder, "timestamp");
+    json_builder_add_double_value(builder, timestamp);
+
+    json_builder_set_member_name(builder, "frame_num");
+    json_builder_add_int_value(builder, (int)frameNum);
+
+    // Objects array for backend consistency
+    json_builder_set_member_name(builder, "objects");
+    json_builder_begin_array(builder);
+    json_builder_begin_object(builder);
+
     json_builder_set_member_name(builder, "class_id");
     json_builder_add_int_value(builder, classId);
 
     json_builder_set_member_name(builder, "tracking_id");
     json_builder_add_int_value(builder, trackingId);
+
+    if (rect) {
+        json_builder_set_member_name(builder, "bbox");
+        json_builder_begin_array(builder);
+        json_builder_add_double_value(builder, rect->left);
+        json_builder_add_double_value(builder, rect->top);
+        json_builder_add_double_value(builder, rect->left + rect->width);
+        json_builder_add_double_value(builder, rect->top + rect->height);
+        json_builder_end_array(builder);
+    }
+
+    json_builder_end_object(builder);
+    json_builder_end_array(builder);
 
     json_builder_end_object(builder);
 
@@ -76,7 +103,7 @@ static NvDsPayload* generate_json_payload(NvDsMsg2pCtx *ctx, int classId, int tr
  * The core logic: converts DeepStream event metadata into a custom JSON string.
  */
 NvDsPayload* nvds_msg2p_generate(NvDsMsg2pCtx *ctx, NvDsEventMsgMeta *meta) {
-    return generate_json_payload(ctx, meta->objClassId, (int)meta->trackingId);
+    return generate_json_payload(ctx, meta->objClassId, (int)meta->trackingId, meta->sensorId, 0, 0, NULL);
 }
 
 /**
@@ -85,9 +112,23 @@ NvDsPayload* nvds_msg2p_generate(NvDsMsg2pCtx *ctx, NvDsEventMsgMeta *meta) {
 NvDsPayload* nvds_msg2p_generate_new(NvDsMsg2pCtx *ctx, void *metadataInfo) {
     NvDsMsg2pMetaInfo *info = (NvDsMsg2pMetaInfo *)metadataInfo;
     NvDsObjectMeta *objMeta = (NvDsObjectMeta *)info->objMeta;
+    NvDsFrameMeta *frameMeta = (NvDsFrameMeta *)info->frameMeta;
 
-    if (objMeta) {
-        return generate_json_payload(ctx, objMeta->class_id, (int)objMeta->object_id);
+    if (objMeta && frameMeta) {
+        double ts = (double)frameMeta->ntp_timestamp / 1e9;
+        if (ts <= 0) {
+            // Fallback to system clock if NTP timestamp is not set
+            GDateTime *now = g_date_time_new_now_local();
+            ts = (double)g_date_time_to_unix(now);
+            g_date_time_unref(now);
+        }
+        return generate_json_payload(ctx, 
+            objMeta->class_id, 
+            (int)objMeta->object_id, 
+            (int)frameMeta->source_id, 
+            frameMeta->frame_num,
+            ts,
+            &objMeta->rect_params);
     }
     return NULL;
 }
