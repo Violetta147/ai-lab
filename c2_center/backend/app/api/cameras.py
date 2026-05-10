@@ -87,4 +87,21 @@ def get_router(pipeline):
             raise HTTPException(404, f"Camera not found: {stream_id}")
         return {"status": "deleted", "stream_id": stream_id}
 
+    @router.post("/{stream_id}/reconnect")
+    async def reconnect_camera(stream_id: str):
+        """Manually trigger connection to a camera stream."""
+        camera = camera_repo.get_camera(stream_id)
+        if not camera:
+            raise HTTPException(404, f"Camera not found: {stream_id}")
+        
+        # Check if already connected
+        if pipeline.video_reader.is_stream_connected(stream_id):
+            return {"status": "already_connected"}
+        
+        if not camera.get("enabled", True):
+            return {"status": "camera_disabled"}
+            
+        success = pipeline.add_stream(stream_id, camera["rtsp_url"])
+        return {"status": "reconnected" if success else "failed"}
+
     return router

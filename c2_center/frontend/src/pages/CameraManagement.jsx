@@ -124,6 +124,28 @@ export default function CameraManagement() {
     }
   };
 
+  const handleReconnect = async (streamId) => {
+    try {
+      const res = await fetch(`/api/cameras/${streamId}/reconnect`, { method: 'POST' });
+      if (!res.ok) throw new Error('Failed to reconnect camera');
+      const data = await res.json();
+      if (data.status === 'already_connected') {
+        setSuccess(`Camera ${streamId} is already connected.`);
+      } else if (data.status === 'camera_disabled') {
+        setError(`Camera ${streamId} is disabled. Please enable it first.`);
+      } else if (data.status === 'reconnected') {
+        setSuccess(`Camera ${streamId} reconnected successfully!`);
+      } else {
+        setError(`Failed to reconnect camera ${streamId}.`);
+      }
+      setTimeout(() => setSuccess(null), 3000);
+      setTimeout(() => setError(null), 3000);
+    } catch (err) {
+      setError(err.message);
+      setTimeout(() => setError(null), 3000);
+    }
+  };
+
   const handlePreviewMediaMtx = async () => {
     try {
       setMediaMtxBusy(true);
@@ -346,6 +368,15 @@ export default function CameraManagement() {
                     title={camera.enabled ? 'Disable camera' : 'Enable camera'}
                   >
                     {camera.enabled ? '⏸ Disable' : '▶ Enable'}
+                  </button>
+                  <button
+                    className="btn-secondary btn-reconnect"
+                    style={{ marginLeft: '8px' }}
+                    onClick={() => handleReconnect(camera.stream_id)}
+                    title="Force reconnect camera stream"
+                    disabled={!camera.enabled}
+                  >
+                    🔄 Reconnect
                   </button>
                   <button
                     className="btn-edit"

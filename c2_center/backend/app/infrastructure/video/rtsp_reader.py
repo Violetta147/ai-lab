@@ -49,10 +49,17 @@ class RtspVideoReader:
         """Reader loop for a single stream — runs in its own thread."""
         cap = None
         reconnect_delay = 1.0
+        retry_count = 0
 
         while self._running:
             if stream_id not in self.queues:
                 logger.info("[%s] Stream removed, stopping reader loop", stream_id)
+                break
+
+            if retry_count >= 3:
+                logger.error("[%s] Max connection retries reached (3). Stopping reader thread.", stream_id)
+                self.queues.pop(stream_id, None)
+                self._threads.pop(stream_id, None)
                 break
 
             try:
@@ -60,11 +67,13 @@ class RtspVideoReader:
                     logger.info("[%s] Connecting to %s...", stream_id, rtsp_url)
                     cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
                     if not cap.isOpened():
+                        retry_count += 1
                         logger.warning(
-                            "[%s] Cannot open %s, retrying in %.0fs",
+                            "[%s] Cannot open %s, retrying in %.0fs (Attempt %d/3)",
                             stream_id,
                             rtsp_url,
                             reconnect_delay,
+                            retry_count
                         )
                         time.sleep(reconnect_delay)
                         reconnect_delay = min(reconnect_delay * 2, 10.0)
@@ -72,14 +81,18 @@ class RtspVideoReader:
 
                     logger.info("[%s] Connected.", stream_id)
                     reconnect_delay = 1.0
+                    retry_count = 0
 
                 ret, frame = cap.read()
                 if not ret or frame is None:
-                    logger.warning("[%s] Read failed, reconnecting...", stream_id)
+                    retry_count += 1
+                    logger.warning("[%s] Read failed, reconnecting... (Attempt %d/3)", stream_id, retry_count)
                     cap.release()
                     cap = None
                     time.sleep(0.5)
                     continue
+                
+                retry_count = 0
 
                 timestamp = time.time()
 
@@ -93,7 +106,8 @@ class RtspVideoReader:
                     q.put_nowait((frame, timestamp))
 
             except Exception:
-                logger.exception("[%s] Reader loop error", stream_id)
+                retry_count += 1
+                logger.exception("[%s] Reader loop error (Attempt %d/3)", stream_id, retry_count)
                 if cap is not None:
                     cap.release()
                     cap = None
