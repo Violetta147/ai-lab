@@ -120,6 +120,7 @@ export default function ModelPlayground() {
         form.append('algorithm', activeAlgo);
         form.append('confidence', settings.confidence / 100);
         form.append('overlap', settings.overlap / 100);
+        form.append('class_filter', settings.labelFilter);
         // validate JSON before sending
         try {
           JSON.parse(paramsJson);

@@ -162,3 +162,22 @@ def test_analyze_rejects_invalid_params_json(client):
     )
     assert resp.status_code == 400
     assert "params_json" in resp.json()["detail"]
+
+def test_analyze_absolute_count(client):
+    jpeg = _make_jpeg_bytes()
+    params = {
+        "roi_polygon": [[10, 10], [200, 10], [200, 200], [10, 200]],
+        "road_length_km": 0.05,
+    }
+    resp = client.post(
+        "/api/playground/analyze",
+        data={
+            "algorithm": "absolute_count",
+            "params_json": json.dumps(params),
+        },
+        files={"file": ("test.jpg", io.BytesIO(jpeg), "image/jpeg")},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["algorithm"] == "absolute_count"
+    assert body["kind"] == "image"

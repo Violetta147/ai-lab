@@ -72,6 +72,42 @@ def _create_video_writer(base_path: str, fps: float, width: int, height: int):
     return None, None, None
 
 
+def _apply_manual_nms(detections: sv.Detections, iou_threshold: float) -> sv.Detections:
+    """Apply NMS manually using OpenCV's built-in function per class."""
+    if len(detections) == 0:
+        return detections
+
+    boxes = detections.xyxy.astype(np.float32)
+    scores = detections.confidence
+
+    # Convert xyxy to xywh format for NMS
+    boxes_xywh = []
+    for x1, y1, x2, y2 in boxes:
+        w = x2 - x1
+        h = y2 - y1
+        boxes_xywh.append([x1, y1, w, h])
+
+    # Apply NMS per class
+    keep_indices = []
+    for class_id in np.unique(detections.class_id):
+        class_mask = detections.class_id == class_id
+        class_indices = np.where(class_mask)[0]
+        class_boxes = [boxes_xywh[i] for i in class_indices]
+        class_scores = scores[class_indices].tolist()
+
+        if len(class_boxes) > 0:
+            # Use OpenCV NMS
+            nms_indices = cv2.dnn.NMSBoxes(class_boxes, class_scores, 0.0, iou_threshold)
+            nms_indices = nms_indices.flatten().tolist() if len(nms_indices) > 0 else []
+            # Map back to global indices
+            keep_indices.extend([class_indices[i] for i in nms_indices])
+
+    keep_indices = sorted(keep_indices)
+    if len(keep_indices) > 0:
+        return detections[np.array(keep_indices)]
+    return sv.Detections.empty()
+
+
 def get_router(model_registry):
     @router.post("/detect")
     async def detect(
@@ -203,42 +239,10 @@ def get_router(model_registry):
                 logger.info("Detection results BEFORE manual NMS: %d boxes (conf=%s)", 
                            len(detections), confidence)
 
-                # Apply NMS manually using OpenCV if there are detections
-                if len(detections) > 0:
-                    boxes = detections.xyxy.astype(np.float32)
-                    scores = detections.confidence
+                detections = _apply_manual_nms(detections, iou_threshold)
 
-                    # Convert xyxy to xywh format for NMS
-                    boxes_xywh = []
-                    for x1, y1, x2, y2 in boxes:
-                        w = x2 - x1
-                        h = y2 - y1
-                        boxes_xywh.append([x1, y1, w, h])
-
-                    # Apply NMS per class
-                    keep_indices = []
-                    for class_id in np.unique(detections.class_id):
-                        class_mask = detections.class_id == class_id
-                        class_indices = np.where(class_mask)[0]
-                        class_boxes = [boxes_xywh[i] for i in class_indices]
-                        class_scores = scores[class_indices].tolist()
-
-                        if len(class_boxes) > 0:
-                            # Use OpenCV NMS
-                            nms_indices = cv2.dnn.NMSBoxes(class_boxes, class_scores, 0.0, iou_threshold)
-                            nms_indices = nms_indices.flatten().tolist() if len(nms_indices) > 0 else []
-                            # Map back to global indices
-                            keep_indices.extend([class_indices[i] for i in nms_indices])
-
-                    # Filter detections to keep only NMS-approved boxes
-                    keep_indices = sorted(keep_indices)
-                    if len(keep_indices) > 0:
-                        detections = detections[np.array(keep_indices)]
-                    else:
-                        detections = sv.Detections.empty()
-
-                    logger.info("Detection results AFTER manual NMS: %d boxes (iou=%s)", 
-                               len(detections), iou_threshold)
+                logger.info("Detection results AFTER manual NMS: %d boxes (iou=%s)", 
+                           len(detections), iou_threshold)
 
                 out = image.copy()
 
@@ -314,31 +318,7 @@ def get_router(model_registry):
                     detections = sv.Detections.from_ultralytics(results)
 
                     # Manual NMS (same as image path)
-                    if len(detections) > 0:
-                        boxes = detections.xyxy.astype(np.float32)
-                        scores = detections.confidence
-                        boxes_xywh = []
-                        for x1, y1, x2, y2 in boxes:
-                            w = x2 - x1
-                            h = y2 - y1
-                            boxes_xywh.append([x1, y1, w, h])
-
-                        keep_indices = []
-                        for class_id in np.unique(detections.class_id):
-                            class_mask = detections.class_id == class_id
-                            class_indices = np.where(class_mask)[0]
-                            class_boxes = [boxes_xywh[i] for i in class_indices]
-                            class_scores = scores[class_indices].tolist()
-                            if len(class_boxes) > 0:
-                                nms_indices = cv2.dnn.NMSBoxes(class_boxes, class_scores, 0.0, iou_threshold)
-                                nms_indices = nms_indices.flatten().tolist() if len(nms_indices) > 0 else []
-                                keep_indices.extend([class_indices[i] for i in nms_indices])
-
-                        keep_indices = sorted(keep_indices)
-                        if len(keep_indices) > 0:
-                            detections = detections[np.array(keep_indices)]
-                        else:
-                            detections = sv.Detections.empty()
+                    detections = _apply_manual_nms(detections, iou_threshold)
 
                     # Annotate frame
                     out_frame = frame.copy()
@@ -449,6 +429,7 @@ def get_router(model_registry):
         algorithm: str = Form(...),
         confidence: float = Form(0.25),
         overlap: float = Form(0.45),
+        class_filter: str = Form(None),
         params_json: str = Form("{}"),
     ):
         """Run a registered analyzer on an uploaded image or video.
@@ -468,7 +449,7 @@ def get_router(model_registry):
         """
         try:
             return await _analyze_impl(
-                file, algorithm, confidence, overlap, params_json
+                file, algorithm, confidence, overlap, class_filter, params_json
             )
         except HTTPException:
             raise
@@ -481,6 +462,7 @@ def get_router(model_registry):
         algorithm: str,
         confidence: float,
         overlap: float,
+        class_filter: str,
         params_json: str,
     ):
         # 1. Validate analyzer slug
@@ -543,10 +525,37 @@ def get_router(model_registry):
         conf = _normalize_01(confidence, 0.25)
         iou = _normalize_01(overlap, 0.45)
 
+        # Prepare classes filter
+        class_filter_list = None
+        resolved_class_filter = "all"
+        class_filter_value = "" if class_filter is None else str(class_filter).strip()
+        if class_filter_value.lower() not in ("all", "all classes", ""):
+            try:
+                class_id = int(class_filter_value)
+                class_filter_list = [class_id]
+                resolved_class_filter = str(class_id)
+            except Exception:
+                try:
+                    labels = model_registry.get_labels(active_model_name)
+                    if class_filter_value in labels:
+                        class_id = labels.index(class_filter_value)
+                        class_filter_list = [class_id]
+                        resolved_class_filter = str(class_id)
+                    else:
+                        lower_labels = [l.lower() for l in labels]
+                        lowered = class_filter_value.lower()
+                        if lowered in lower_labels:
+                            class_id = lower_labels.index(lowered)
+                            class_filter_list = [class_id]
+                            resolved_class_filter = str(class_id)
+                except Exception:
+                    resolved_class_filter = "all"
+
         def _run_analyzer_on_frame(frame: np.ndarray):
             """Inference + analyzer.process for a single frame."""
-            results = model.predict(frame, conf=conf, iou=iou, verbose=False)[0]
+            results = model.predict(frame, conf=conf, classes=class_filter_list, verbose=False)[0]
             detections = sv.Detections.from_ultralytics(results)
+            detections = _apply_manual_nms(detections, iou)
             return analyzer.process(frame, detections, user_params)
 
         def _execute():
@@ -640,6 +649,7 @@ def get_router(model_registry):
             "model": active_model_name,
             "used_confidence": conf,
             "used_iou": iou,
+            "resolved_class_filter": resolved_class_filter,
             **result,
         }
 
