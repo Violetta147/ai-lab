@@ -22,7 +22,7 @@ set -euo pipefail
 # ======================== CONFIGURATION ======================================
 LAPTOP_A_IP="${LAPTOP_A_IP:-192.168.1.196}"
 NUM_SOURCES="${NUM_SOURCES:-2}"
-WORK_DIR="${WORK_DIR:-/workspace/deepstream_yolo26}"
+WORK_DIR="${WORK_DIR:-$(pwd)}"
 
 resolve_ds_dir() {
     if [ -n "${DS_DIR:-}" ] && [ -d "${DS_DIR}" ]; then

@@ -8,10 +8,6 @@ rtspServerKey: ""
 rtspServerCert: ""
 
 paths:
-  camera_parking:
-    source: publisher
-    sourceOnDemand: no
-
   muahe:
     source: publisher
     sourceOnDemand: no

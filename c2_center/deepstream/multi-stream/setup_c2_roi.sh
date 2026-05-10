@@ -10,7 +10,7 @@ set -euo pipefail
 # ======================== CONFIGURATION ======================================
 LAPTOP_A_IP="${LAPTOP_A_IP:-192.168.1.196}"
 NUM_SOURCES="${NUM_SOURCES:-2}"
-WORK_DIR="${WORK_DIR:-/workspace/deepstream_yolo26}"
+WORK_DIR="${WORK_DIR:-$(pwd)}"
 
 resolve_ds_dir() {
     if [ -n "${DS_DIR:-}" ] && [ -d "${DS_DIR}" ]; then
@@ -100,8 +100,8 @@ echo "[C2] Writing Analytics ROI config..."
 cat > "${ANALYTICS_CFG}" << EOF
 [property]
 enable=1
-config-width=640
-config-height=640
+config-width=1920
+config-height=1080
 osd-mode=0
 display-font-size=12
 EOF
@@ -111,8 +111,8 @@ for i in $(seq 0 $((NUM_SOURCES - 1))); do
 
 [roi-filtering-stream-${i}]
 enable=1
-# Default center-ish polygon
-roi-polygon-0=100;100;500;100;500;500;100;500
+# Specific ROI from user request
+roi-polygon-0=759;306;1077;325;1477;957;292;917
 label=ROI_Area
 EOF
 done
