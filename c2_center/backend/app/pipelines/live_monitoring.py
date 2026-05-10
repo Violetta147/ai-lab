@@ -78,12 +78,44 @@ class LivePipelineHandle:
         self.kafka_consumer.set_stream_mapping(self._source_counter, stream_id)
         self._source_counter += 1
 
+        # Auto-seed zone_repo from stream_profiles.json if empty
+        self._seed_zones_from_profile(stream_id)
+
         added = self.video_reader.add_stream(stream_id, rtsp_url)
         # Even if reader rejects (already exists), we still want stream_manager+pipeline aware.
         self.stream_manager.add_stream(stream_id)
         self.ws_streamer.register_stream(stream_id)
         self.pipeline_manager.start_stream(stream_id)
         return added
+
+    def _seed_zones_from_profile(self, stream_id: str) -> None:
+        """If zone_repo is empty for this stream, seed it from stream_profiles.json."""
+        from app.core.config import settings
+        from app.infrastructure.config.stream_profiles import load_stream_profiles
+
+        existing = self.zone_repo.get(stream_id, {})
+        if existing.get("roi_polygon"):
+            logger.info("[%s] zone_repo already has ROI — skipping seed", stream_id)
+            return
+
+        profiles = load_stream_profiles(settings.STREAM_PROFILES_PATH)
+        profile = profiles.get(stream_id)
+        if not profile:
+            logger.info("[%s] No stream profile found — skipping ROI seed", stream_id)
+            return
+
+        zone_data = {}
+        if profile.get("roi_polygon"):
+            zone_data["roi_polygon"] = profile["roi_polygon"]
+            zone_data["roi_config_resolution"] = profile.get("resolution", [1920, 1080])
+        if profile.get("entry_line"):
+            zone_data["entry_line"] = profile["entry_line"]
+        if profile.get("exit_line"):
+            zone_data["exit_line"] = profile["exit_line"]
+
+        if zone_data:
+            self.zone_repo.set(stream_id, zone_data)
+            logger.info("[%s] Seeded zone_repo from stream_profiles: %s", stream_id, list(zone_data.keys()))
 
     def remove_stream(self, stream_id: str) -> bool:
         """Tear down a single stream end-to-end."""

@@ -117,12 +117,29 @@ osd-display=0
 EOF
 
 for i in $(seq 0 $((NUM_SOURCES - 1))); do
+    # ROI polygon coordinates at config-width=1920, config-height=1080.
+    # SCHEMA CONTRACT: These values MUST match config/stream_profiles.json
+    # on the backend.  Format: x1;y1;x2;y2;x3;y3;x4;y4
+    # To update, edit BOTH this file AND stream_profiles.json.
+    ROI_POINTS="759;306;1077;325;1477;957;292;917"
+
+    # Try reading from shared config if jq is available
+    PROFILE_FILE="${WORK_DIR}/../config/stream_profiles.json"
+    if command -v jq &>/dev/null && [ -f "${PROFILE_FILE}" ]; then
+        CAM_PATH="${RTSP_PATH_ARR[$i]:-muahe}"
+        JQ_RESULT=$(jq -r --arg s "$CAM_PATH" '.streams[$s].roi_polygon // empty | map(tostring) | join(";")' "${PROFILE_FILE}" 2>/dev/null || true)
+        if [ -n "${JQ_RESULT}" ]; then
+            ROI_POINTS="${JQ_RESULT}"
+            echo "[C2] Loaded ROI from stream_profiles.json for ${CAM_PATH}: ${ROI_POINTS}"
+        fi
+    fi
+
     cat >> "${ANALYTICS_CFG}" << EOF
 
 [roi-filtering-stream-${i}]
 enable=1
 # Specific ROI from user request
-roi-polygon-ROI_Area=759;306;1077;325;1477;957;292;917
+roi-polygon-ROI_Area=${ROI_POINTS}
 EOF
 done
 

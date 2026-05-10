@@ -13,6 +13,7 @@ from pydantic_settings import BaseSettings
 # parents[0] = core, parents[1] = app, parents[2] = backend, parents[3] = c2_center
 _BACKEND_DIR = Path(__file__).resolve().parents[2]
 _APP_DIR = Path(__file__).resolve().parents[1]
+_C2_CENTER_DIR = _BACKEND_DIR.parent  # c2_center/
 _SQLITE_DIR = _APP_DIR / "storage" / "sqlite"
 
 
@@ -45,6 +46,7 @@ class Settings(BaseSettings):
     # --- Persistence ---
     CAMERA_DB_PATH: Path = _SQLITE_DIR / "c2_cameras.db"
     ZONE_DB_PATH: Path = _SQLITE_DIR / "zone_store.db"
+    STREAM_PROFILES_PATH: Path = _C2_CENTER_DIR / "config" / "stream_profiles.json"
 
     model_config = {"env_prefix": "C2_", "env_file": ".env", "extra": "ignore"}
 

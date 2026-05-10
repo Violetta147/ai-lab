@@ -192,25 +192,6 @@ export default function DeepAnalysis() {
             </div>
           )}
         </div>
-
-        {/* Per-class detection counts — compact bar */}
-        <div className="glass-card da-class-counts">
-          <div className="section-title"><span>🏷</span> Detections</div>
-          <div className="da-class-list">
-            {Object.keys(classCounts).length > 0 ? (
-              Object.entries(classCounts).map(([cls, count]) => (
-                <div key={cls} className="da-class-item">
-                  <span className="da-class-name">{cls}</span>
-                  <span className="da-class-count">{count}</span>
-                </div>
-              ))
-            ) : (
-              <div className="da-class-item" style={{ color: 'var(--text-muted)' }}>
-                No detections
-              </div>
-            )}
-          </div>
-        </div>
       </div>
 
       <div className="split-sidebar">
@@ -232,6 +213,25 @@ export default function DeepAnalysis() {
               </option>
             ))}
           </select>
+        </div>
+
+        {/* Per-class detection counts */}
+        <div className="glass-card controls-panel">
+          <div className="section-title"><span>🏷</span> Detections</div>
+          <div className="da-class-list">
+            {Object.keys(classCounts).length > 0 ? (
+              Object.entries(classCounts).map(([cls, count]) => (
+                <div key={cls} className="da-class-item">
+                  <span className="da-class-name">{cls}</span>
+                  <span className="da-class-count">{count}</span>
+                </div>
+              ))
+            ) : (
+              <div className="da-class-item" style={{ color: 'var(--text-muted)' }}>
+                No detections
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Dynamic Live Metrics */}

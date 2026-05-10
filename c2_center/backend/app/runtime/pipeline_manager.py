@@ -115,7 +115,7 @@ class PipelineManager:
                     continue
 
                 detections = metadata_to_detections(objects)
-                params = self._build_params(stream_id, detections)
+                params = self._build_params(stream_id, detections, frame=frame)
 
                 # Periodic debug logging
                 self._sync_counts[stream_id] = self._sync_counts.get(stream_id, 0) + len(objects)
@@ -153,9 +153,21 @@ class PipelineManager:
 
         logger.info("[%s] Pipeline task exited", stream_id)
 
-    def _build_params(self, stream_id: str, detections) -> dict:
+    def _build_params(self, stream_id: str, detections, frame: np.ndarray | None = None) -> dict:
         """Assemble the params dict that the active analyzer expects."""
         params = dict(self._zone_repo.get(stream_id, {}))
+
+        # Scale roi_polygon from config resolution to actual frame resolution
+        if "roi_polygon" in params and frame is not None:
+            config_res = params.pop("roi_config_resolution", None)
+            if config_res:
+                from app.infrastructure.config.stream_profiles import scale_polygon
+                frame_h, frame_w = frame.shape[:2]
+                params["roi_polygon"] = scale_polygon(
+                    params["roi_polygon"],
+                    src_res=tuple(config_res),
+                    dst_res=(frame_w, frame_h),
+                )
 
         try:
             tracker_present = (

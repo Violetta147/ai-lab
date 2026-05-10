@@ -42,11 +42,16 @@ from app.infrastructure.models.registry import ModelRegistry
 from app.pipelines.live_monitoring import wire_live_pipeline
 from app.ws.streamer import WsStreamer
 
+from app.core.log_filters import HealthLogFilter
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
 )
 logger = logging.getLogger("c2_backend")
+
+# Suppress noisy /api/health access log lines
+logging.getLogger("uvicorn.access").addFilter(HealthLogFilter())
 
 # --- Composition root: build singletons once at import time ---
 registry.discover("app.analytics.plugins")

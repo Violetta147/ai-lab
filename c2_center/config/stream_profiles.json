@@ -1,0 +1,10 @@
+{
+  "streams": {
+    "muahe": {
+      "source_index": 0,
+      "resolution": [1920, 1080],
+      "roi_polygon": [[759, 306], [1077, 325], [1477, 957], [292, 917]],
+      "description": "Mua He camera - main intersection ROI"
+    }
+  }
+}
