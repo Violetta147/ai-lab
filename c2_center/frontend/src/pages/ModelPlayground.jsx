@@ -16,13 +16,13 @@ const DEFAULT_SETTINGS = {
 
 const DEFAULT_PARAMS = `{
   "roi_polygon": [
-    [10, 10],
-    [400, 10],
-    [400, 400],
-    [10, 400]
+    [50, 50],
+    [1200, 50],
+    [1200, 700],
+    [50, 700]
   ],
-  "entry_line": [[10, 100], [400, 100]],
-  "exit_line": [[10, 300], [400, 300]],
+  "entry_line": [[50, 100], [1200, 100]],
+  "exit_line": [[50, 600], [1200, 600]],
   "road_length_km": 0.05,
   "line_distance_km": 0.02
 }`;

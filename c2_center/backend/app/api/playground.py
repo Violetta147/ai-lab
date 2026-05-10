@@ -108,6 +108,22 @@ def _apply_manual_nms(detections: sv.Detections, iou_threshold: float) -> sv.Det
     return sv.Detections.empty()
 
 
+def _transcode_to_h264(input_path: str) -> str:
+    """Attempt to transcode a video to browser-friendly H264 using ffmpeg."""
+    final_out_path = input_path + ".h264.mp4"
+    try:
+        import subprocess
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", input_path, "-vcodec", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p", final_out_path],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return final_out_path
+    except Exception as e:
+        logger.warning("FFmpeg transcoding failed for %s: %s", input_path, e)
+        return input_path
+
 def get_router(model_registry):
     @router.post("/detect")
     async def detect(
@@ -364,6 +380,7 @@ def get_router(model_registry):
                     pass
 
             # Read output video and cleanup
+            out_path = _transcode_to_h264(out_path)
             try:
                 file_size = os.path.getsize(out_path) if os.path.exists(out_path) else 0
                 logger.info("Playground video file size: %d bytes", file_size)
@@ -618,6 +635,8 @@ def get_router(model_registry):
                     cap.release()
                 except Exception:
                     pass
+
+            out_path = _transcode_to_h264(out_path)
 
             data_b64 = ""
             try:
