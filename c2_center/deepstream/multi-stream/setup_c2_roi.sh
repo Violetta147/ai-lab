@@ -230,11 +230,5 @@ echo "[C2] Starting deepstream-app (ROI Mode)..."
 # Strip all Windows \r characters from generated configs before running
 sed -i 's/\r//g' "${INFER_CFG}" "${APP_CFG}" "${KAFKA_CFG}" "${ANALYTICS_CFG}" "${NVMSGCONV_CFG_DST}" 2>/dev/null || true
 
-# Try deepstream-test5-app first, fallback to deepstream-app
-if command -v deepstream-test5-app &> /dev/null; then
-    echo "[C2] Using deepstream-test5-app for robust custom payload support..."
-    deepstream-test5-app -c "${APP_CFG}"
-else
-    echo "[WARNING] deepstream-test5-app not found. Falling back to deepstream-app (Custom Payload may fail)..."
-    deepstream-app -c "${APP_CFG}"
-fi
+# Using deepstream-app with the Inlined Golden Solution (Bypassing parser bug)
+deepstream-app -c "${APP_CFG}"
