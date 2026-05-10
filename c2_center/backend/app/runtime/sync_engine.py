@@ -40,7 +40,6 @@ class SyncEngine:
         # Dynamic Drift Correction: {stream_id: average_offset_sec}
         self._offsets: dict[str, float] = {}
         self._alpha = 0.05  # Smoothing factor for drift
-        self._initial_lock_range_ms = 2000.0  # Search up to 2s to find initial lock
 
     async def get_synced_frame(
         self, stream_id: str
@@ -57,12 +56,8 @@ class SyncEngine:
         frame, frame_ts = result
         
         # Apply drift correction to the search target
-        has_offset = stream_id in self._offsets
         offset = self._offsets.get(stream_id, 0.0)
         search_ts = frame_ts + offset
-        
-        # If no offset known yet, use a wider tolerance for initial lock
-        current_tolerance = settings.SYNC_TOLERANCE_MS if has_offset else self._initial_lock_range_ms
         
         all_objects = []
         new_metadata_found = False
@@ -72,7 +67,7 @@ class SyncEngine:
             metadata = await self.kafka_consumer.pop_nearest(
                 stream_id=stream_id,
                 target_ts=search_ts,
-                tolerance_ms=current_tolerance,
+                tolerance_ms=settings.SYNC_TOLERANCE_MS,
             )
             if not metadata:
                 break

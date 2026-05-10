@@ -66,8 +66,6 @@ class RtspVideoReader:
                 if cap is None or not cap.isOpened():
                     logger.info("[%s] Connecting to %s...", stream_id, rtsp_url)
                     cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
-                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-
                     if not cap.isOpened():
                         retry_count += 1
                         logger.warning(
