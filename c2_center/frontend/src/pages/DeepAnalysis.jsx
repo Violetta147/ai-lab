@@ -3,19 +3,14 @@ import PolygonDrawer from '../components/PolygonDrawer';
 import TrafficChart from '../components/TrafficChart';
 import { useWebSocket, apiFetch } from '../hooks/useWebSocket';
 
-const ALGORITHMS = [
-  { slug: 'absolute_count', name: 'Absolute Count' },
-  { slug: 'area_occupancy', name: 'Area Occupancy (BEV)' },
-  { slug: 'pce_density', name: 'PCE-Aware Density' },
-  { slug: 'fundamental_equation', name: 'Fundamental Equation' },
-  { slug: 'heatmap', name: 'Heatmap' },
-  { slug: 'line_crossing', name: 'Line Crossing' },
-];
-
 export default function DeepAnalysis() {
   const [streams, setStreams] = useState([]);
   const [activeStream, setActiveStream] = useState('');
-  const [activeAlgo, setActiveAlgo] = useState('absolute_count');
+  
+  // Algorithms state
+  const [algorithms, setAlgorithms] = useState([]);
+  const [activeAlgo, setActiveAlgo] = useState('heatmap'); // Match backend default
+  
   const [drawMode, setDrawMode] = useState(null); // 'polygon' | 'entry_line' | 'exit_line'
   const [zones, setZones] = useState({});
   const [frame, setFrame] = useState(null);
@@ -24,6 +19,7 @@ export default function DeepAnalysis() {
   const [health, setHealth] = useState(null);
 
   useEffect(() => {
+    // Fetch streams
     apiFetch('/api/streams')
       .then(data => {
         const list = data || [];
@@ -34,6 +30,17 @@ export default function DeepAnalysis() {
         setStreams([{ stream_id: 'stream_1' }]);
         setActiveStream('stream_1');
       });
+
+    // Fetch live-compatible algorithms
+    apiFetch('/api/analytics/algorithms?mode=live')
+      .then(data => {
+        setAlgorithms(data || []);
+        // If heatmap isn't available for some reason, fallback to first
+        if (data?.length > 0 && !data.find(a => a.slug === 'heatmap')) {
+           setActiveAlgo(data[0].slug);
+        }
+      })
+      .catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -155,7 +162,7 @@ export default function DeepAnalysis() {
         <div className="glass-card controls-panel">
           <div className="section-title"><span>🎛</span> Algorithm</div>
           <select className="control-select" value={activeAlgo} onChange={e => switchAlgo(e.target.value)}>
-            {ALGORITHMS.map(a => <option key={a.slug} value={a.slug}>{a.name}</option>)}
+            {algorithms.map(a => <option key={a.slug} value={a.slug}>{a.name}</option>)}
           </select>
         </div>
 
