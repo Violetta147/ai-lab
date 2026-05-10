@@ -102,11 +102,14 @@ INFER_BATCH_SIZE=1
 [ ! -f "${MODEL_LABELS_FILE}" ] && echo "[ERROR] Missing: ${MODEL_LABELS_FILE}" && exit 1
 [ ! -f "${CUSTOM_LIB_Y26}" ] && echo "[ERROR] Missing: ${CUSTOM_LIB_Y26}" && exit 1
 
-# --- Environment optimization ---
-echo "[C2] Clearing GStreamer cache..."
+# --- RCA Fix: Headless Mode ---
+echo "[C2] Applying Headless Fix (RCA-2026-05-09)..."
+# Strip EGL sink stub to prevent plugin blacklisting in headless containers
+rm -f /usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgsteglglessink.so 2>/dev/null || true
 rm -rf /root/.cache/gstreamer-1.0/ 2>/dev/null || true
 ldconfig
 unset DISPLAY 2>/dev/null || true
+export EGL_DISPLAY=none
 
 # =============================================================================
 # CONFIG: Inference (identical to single-stream)
@@ -210,10 +213,13 @@ cat >> "${APP_CFG}" << EOF
 [streammux]
 gpu-id=0
 live-source=1
-batch-size=${NUM_SOURCES}
+# RCA Fix: Force batch-size=1 even for multi-source to match static ONNX batch=1
+batch-size=1
 width=640
 height=640
 batched-push-timeout=40000
+# Jetson Unified Memory
+nvbuf-memory-type=0
 
 [primary-gie]
 enable=1

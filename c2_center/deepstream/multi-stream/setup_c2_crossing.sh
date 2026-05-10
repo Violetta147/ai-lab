@@ -52,10 +52,16 @@ echo "[C2] Crossing Version — Laptop A IP: ${LAPTOP_A_IP}, Sources: ${NUM_SOUR
 
 # --- RCA Fix: Headless Mode ---
 echo "[C2] Applying Headless Fix (RCA-2026-05-09)..."
+# Strip EGL sink stub to prevent plugin blacklisting in headless containers
+rm -f /usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgsteglglessink.so 2>/dev/null || true
 rm -rf /root/.cache/gstreamer-1.0/ 2>/dev/null || true
 ldconfig
 unset DISPLAY 2>/dev/null || true
 export EGL_DISPLAY=none
+
+# Sanitize variables (strip potential \r or spaces)
+LAPTOP_A_IP=$(echo "${LAPTOP_A_IP}" | tr -d '\r\n ')
+RTSP_PATHS=$(echo "${RTSP_PATHS}" | tr -d '\r\n ')
 
 # --- Auto-detect num classes ---
 MODEL_NUM_CLASSES="$(awk 'NF { c+=1 } END { print c+0 }' "${MODEL_LABELS_FILE}")"
@@ -102,8 +108,7 @@ cat > "${ANALYTICS_CFG}" << EOF
 enable=1
 config-width=640
 config-height=640
-osd-mode=0
-display-font-size=12
+osd-display=0
 EOF
 
 for i in $(seq 0 $((NUM_SOURCES - 1))); do
@@ -143,10 +148,13 @@ enable=0
 [streammux]
 gpu-id=0
 live-source=1
-batch-size=${NUM_SOURCES}
+# RCA Fix: Force batch-size=1 even for multi-source to match static ONNX batch=1
+batch-size=1
 width=640
 height=640
 batched-push-timeout=40000
+# Jetson Unified Memory
+nvbuf-memory-type=0
 
 [primary-gie]
 enable=1
@@ -164,7 +172,7 @@ ll-config-file=${SAMPLES_DIR}/configs/deepstream-app/config_tracker_NvDCF_perf.y
 enable-past-frame=1
 display-tracking-id=1
 
-[nvdsanalytics]
+[nvds-analytics]
 enable=1
 config-file=${ANALYTICS_CFG}
 
@@ -182,7 +190,8 @@ EOF
 
 IFS=',' read -ra RTSP_PATH_ARR <<< "${RTSP_PATHS}"
 for i in $(seq 0 $((NUM_SOURCES - 1))); do
-    CAM_PATH="${RTSP_PATH_ARR[$i]:-cam$((i + 1))}"
+    # Default to 'muahe' if RTSP_PATHS is empty
+    CAM_PATH="${RTSP_PATH_ARR[$i]:-muahe}"
     cat >> "${APP_CFG}" << EOF
 
 [source${i}]

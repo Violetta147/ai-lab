@@ -8,35 +8,35 @@
 set -euo pipefail
 
 # ======================== CONFIGURATION ======================================
-LAPTOP_A_IP="${LAPTOP_A_IP:-192.168.1.196}"
-NUM_SOURCES="${NUM_SOURCES:-2}"
-WORK_DIR="${WORK_DIR:-$(pwd)}"
+# --- RCA Fix: Global Variable Sanitization ---
+# Strip hidden Windows carriage returns (\r) from ALL environment variables
+LAPTOP_A_IP=$(echo "${LAPTOP_A_IP:-172.16.1.162}" | tr -d '\r\n ')
+NUM_SOURCES=$(echo "${NUM_SOURCES:-1}" | tr -d '\r\n ')
+WORK_DIR=$(echo "${WORK_DIR:-$(pwd)}" | tr -d '\r\n ')
+KAFKA_TOPIC=$(echo "${KAFKA_TOPIC:-c2_metadata}" | tr -d '\r\n ')
+RTSP_PATHS=$(echo "${RTSP_PATHS:-}" | tr -d '\r\n ')
 
 resolve_ds_dir() {
-    if [ -n "${DS_DIR:-}" ] && [ -d "${DS_DIR}" ]; then
-        echo "${DS_DIR}"
-        return 0
-    fi
+    local candidate_dir=""
     for candidate in /opt/nvidia/deepstream/deepstream-6.0.1-devel /opt/nvidia/deepstream/deepstream-6.0.1 /opt/nvidia/deepstream/deepstream-6.0; do
-        if [ -d "${candidate}" ]; then echo "${candidate}"; return 0; fi
+        if [ -d "${candidate}" ]; then candidate_dir="${candidate}"; break; fi
     done
-    echo "/opt/nvidia/deepstream/deepstream-6.0"
+    [ -z "${candidate_dir}" ] && candidate_dir="/opt/nvidia/deepstream/deepstream-6.0"
+    echo "${candidate_dir}" | tr -d '\r\n '
 }
 
 DS_DIR="$(resolve_ds_dir)"
-SAMPLES_DIR="${DS_DIR}/samples"
+SAMPLES_DIR=$(echo "${DS_DIR}/samples" | tr -d '\r\n ')
 [ ! -d "${SAMPLES_DIR}" ] && SAMPLES_DIR="/opt/nvidia/deepstream/deepstream-6.0/samples"
 
-MODEL_NAME="${MODEL_NAME:-yolo_all_exports_p2n_fine-tuning2_best}"
-MODEL_ENGINE_FILE="${MODEL_ENGINE_FILE:-${WORK_DIR}/${MODEL_NAME}.engine}"
-MODEL_ONNX_FILE="${MODEL_ONNX_FILE:-${WORK_DIR}/${MODEL_NAME}.onnx}"
-MODEL_LABELS_FILE="${MODEL_LABELS_FILE:-${WORK_DIR}/${MODEL_NAME}_labels.txt}"
-CUSTOM_LIB_Y26="${CUSTOM_LIB_Y26:-${WORK_DIR}/libnvdsinfer_custom_impl_Yolo26.so}"
+MODEL_NAME=$(echo "${MODEL_NAME:-yolo_all_exports_p2n_fine-tuning2_best}" | tr -d '\r\n ')
+MODEL_ENGINE_FILE=$(echo "${WORK_DIR}/${MODEL_NAME}.engine" | tr -d '\r\n ')
+MODEL_ONNX_FILE=$(echo "${WORK_DIR}/${MODEL_NAME}.onnx" | tr -d '\r\n ')
+MODEL_LABELS_FILE=$(echo "${WORK_DIR}/${MODEL_NAME}_labels.txt" | tr -d '\r\n ')
+CUSTOM_LIB_Y26=$(echo "${WORK_DIR}/libnvdsinfer_custom_impl_Yolo26.so" | tr -d '\r\n ')
 
-KAFKA_BROKER="${LAPTOP_A_IP}:9092"
-KAFKA_TOPIC="${KAFKA_TOPIC:-c2_metadata}"
-RTSP_BASE_PORT="${RTSP_BASE_PORT:-8554}"
-RTSP_PATHS="${RTSP_PATHS:-}"
+KAFKA_BROKER=$(echo "${LAPTOP_A_IP}:9092" | tr -d '\r\n ')
+RTSP_BASE_PORT=$(echo "${RTSP_BASE_PORT:-8554}" | tr -d '\r\n ')
 
 INFER_CFG="${WORK_DIR}/config_infer_c2.txt"
 APP_CFG="${WORK_DIR}/deepstream_c2_roi.txt"
@@ -52,10 +52,16 @@ echo "[C2] ROI Version — Laptop A IP: ${LAPTOP_A_IP}, Sources: ${NUM_SOURCES}"
 
 # --- RCA Fix: Headless Mode ---
 echo "[C2] Applying Headless Fix (RCA-2026-05-09)..."
+# Strip EGL sink stub to prevent plugin blacklisting in headless containers
+rm -f /usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgsteglglessink.so 2>/dev/null || true
 rm -rf /root/.cache/gstreamer-1.0/ 2>/dev/null || true
 ldconfig
 unset DISPLAY 2>/dev/null || true
 export EGL_DISPLAY=none
+
+# Sanitize variables (strip potential \r or spaces)
+LAPTOP_A_IP=$(echo "${LAPTOP_A_IP}" | tr -d '\r\n ')
+RTSP_PATHS=$(echo "${RTSP_PATHS}" | tr -d '\r\n ')
 
 # --- Auto-detect num classes ---
 MODEL_NUM_CLASSES="$(awk 'NF { c+=1 } END { print c+0 }' "${MODEL_LABELS_FILE}")"
@@ -102,8 +108,7 @@ cat > "${ANALYTICS_CFG}" << EOF
 enable=1
 config-width=1920
 config-height=1080
-osd-mode=0
-display-font-size=12
+osd-display=0
 EOF
 
 for i in $(seq 0 $((NUM_SOURCES - 1))); do
@@ -112,21 +117,34 @@ for i in $(seq 0 $((NUM_SOURCES - 1))); do
 [roi-filtering-stream-${i}]
 enable=1
 # Specific ROI from user request
-roi-polygon-0=759;306;1077;325;1477;957;292;917
-label=ROI_Area
+roi-polygon-ROI_Area=759;306;1077;325;1477;957;292;917
 EOF
 done
 
 # =============================================================================
-# CONFIG: Kafka & Application
+# CONFIG: nvmsgconv & Kafka
 # =============================================================================
+# Write files FIRST so realpath works
+cat > "${WORK_DIR}/nvmsgconv_c2_config.txt" << EOF
+[property]
+payload-type=256
+
+[custom]
+msg2p-lib=${WORK_DIR}/libnvds_msgconv_c2.so
+EOF
+
 cat > "${KAFKA_CFG}" << EOF
 [message-broker]
 bootstrap.servers=${KAFKA_BROKER}
+topic=${KAFKA_TOPIC}
 EOF
 
-NVMSGCONV_CFG_DST="${WORK_DIR}/nvmsgconv_c2_config.txt"
-MSGCONV_LIB_DST="${WORK_DIR}/libnvds_msgconv_c2.so"
+# Now resolve absolute paths
+NVMSGCONV_CFG_DST="$(realpath -m "${WORK_DIR}/nvmsgconv_c2_config.txt")"
+MSGCONV_LIB_DST="$(realpath -m "${WORK_DIR}/libnvds_msgconv_c2.so")"
+INFER_CFG_DST="$(realpath -m "${INFER_CFG}")"
+ANALYTICS_CFG_DST="$(realpath -m "${ANALYTICS_CFG}")"
+KAFKA_CFG_DST="$(realpath -m "${KAFKA_CFG}")"
 
 echo "[C2] Writing app config..."
 cat > "${APP_CFG}" << EOF
@@ -143,16 +161,17 @@ enable=0
 [streammux]
 gpu-id=0
 live-source=1
-batch-size=${NUM_SOURCES}
+batch-size=1
 width=640
 height=640
 batched-push-timeout=40000
+nvbuf-memory-type=0
 
 [primary-gie]
 enable=1
 gpu-id=0
 gie-unique-id=1
-config-file=${INFER_CFG}
+config-file=${INFER_CFG_DST}
 
 [tracker]
 enable=1
@@ -164,25 +183,28 @@ ll-config-file=${SAMPLES_DIR}/configs/deepstream-app/config_tracker_NvDCF_perf.y
 enable-past-frame=1
 display-tracking-id=1
 
-[nvdsanalytics]
+[nvds-analytics]
 enable=1
-config-file=${ANALYTICS_CFG}
+config-file=${ANALYTICS_CFG_DST}
 
 [sink0]
 enable=1
 type=6
+gpu-id=0
 msg-conv-config=${NVMSGCONV_CFG_DST}
-msg-conv-payload-type=256
-msg-conv-msg2p-lib=${MSGCONV_LIB_DST}
+msg-conv-payload-type=0
 msg-broker-proto-lib=${DS_DIR}/lib/libnvds_kafka_proto.so
 msg-broker-conn-str=${LAPTOP_A_IP};9092;${KAFKA_TOPIC}
-msg-broker-config=${KAFKA_CFG}
 sync=0
 EOF
 
 IFS=',' read -ra RTSP_PATH_ARR <<< "${RTSP_PATHS}"
 for i in $(seq 0 $((NUM_SOURCES - 1))); do
-    CAM_PATH="${RTSP_PATH_ARR[$i]:-cam$((i + 1))}"
+    # Correctly handle empty array elements for default path
+    CAM_PATH="${RTSP_PATH_ARR[$i]:-}"
+    if [ -z "${CAM_PATH}" ]; then
+        CAM_PATH="muahe"
+    fi
     cat >> "${APP_CFG}" << EOF
 
 [source${i}]
@@ -190,11 +212,13 @@ enable=1
 type=4
 uri=rtsp://${LAPTOP_A_IP}:${RTSP_BASE_PORT}/${CAM_PATH}
 gpu-id=0
-select-rtp-protocol=4
-latency=150
-rtsp-reconnect-interval-sec=5
 EOF
 done
 
 echo "[C2] Starting deepstream-app (ROI Mode)..."
+
+# --- RCA Fix: Unix Line Endings ---
+# Strip all Windows \r characters from generated configs before running
+sed -i 's/\r//g' "${INFER_CFG}" "${APP_CFG}" "${KAFKA_CFG}" "${ANALYTICS_CFG}" "${NVMSGCONV_CFG_DST}" 2>/dev/null || true
+
 deepstream-app -c "${APP_CFG}"
