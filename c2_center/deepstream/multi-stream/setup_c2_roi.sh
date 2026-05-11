@@ -179,7 +179,7 @@ perf-measurement-interval-sec=5
 enable=0
 
 [osd]
-enable=1
+enable=0
 gpu-id=0
 border-width=2
 text-size=12
@@ -235,7 +235,7 @@ msg-broker-config=${KAFKA_CFG_DST}
 sync=0
 
 [sink1]
-enable=1
+enable=0
 type=4
 # RTSP Streaming (Annotated Video)
 rtsp-port=8555

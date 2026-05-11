@@ -28,18 +28,17 @@ flowchart TD
             NVDA["nvds-analytics\nconfig-width=1920\nconfig-height=1080\nROI polygon: 759;306;1077;325;1477;957;292;917\n(loaded from stream_profiles.json)"]
         end
 
-        subgraph OSD_LAYER ["On-Screen Display"]
+        subgraph OSD_LAYER ["On-Screen Display (DISABLED for Perf)"]
             OSD["osd\nborder-width=2\ntext-size=12\nshow-clock=1"]
         end
 
         subgraph SINKS ["Output Sinks"]
             SINK0["sink0 — Kafka Message\ntype=6\nmsg-conv-payload-type=257\nlib: libnvds_msgconv_c2.so (custom)\nbroker: libnvds_kafka_proto.so\nconn: 172.16.1.162;9092;c2_metadata"]
-            SINK1["sink1 — RTSP Server\ntype=4\nrtsp-port=8555\nudp-port=5400\ncodec=1 (H.264)\nbitrate=4000000"]
+            SINK1["sink1 — RTSP Server (DISABLED)\ntype=4\nrtsp-port=8555\nudp-port=5400\ncodec=1 (H.264)\nbitrate=4000000"]
         end
 
-        SRC0 --> SM --> PGIE --> TRACKER --> NVDA --> OSD
-        OSD --> SINK0
-        OSD --> SINK1
+        SRC0 --> SM --> PGIE --> TRACKER --> NVDA
+        NVDA --> SINK0
     end
 ```
 

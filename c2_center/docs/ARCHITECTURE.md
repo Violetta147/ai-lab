@@ -13,11 +13,10 @@ flowchart TD
         ANALYTICS["nvds-analytics\nROI Polygon Filtering"]
         MSGCONV["nvmsgconv\nType 257 Custom JSON\nlibnvds_msgconv_c2.so"]
         KAFKASINK["sink0: Kafka\nlibnvds_kafka_proto.so"]
-        RTSPSINK["sink1: RTSP Out\nport 8555, H.264"]
+        RTSPSINK["sink1: RTSP Out\n(DISABLED)"]
 
         SRC --> SM --> PGIE --> TRACKER --> ANALYTICS
         ANALYTICS --> MSGCONV --> KAFKASINK
-        ANALYTICS --> RTSPSINK
     end
 
     subgraph INFRA ["🟡 INFRASTRUCTURE — Laptop A (172.16.1.162)"]
