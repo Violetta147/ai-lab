@@ -45,9 +45,8 @@ class SyncEngine:
         self, stream_id: str
     ) -> tuple[np.ndarray | None, list[dict]]:
         """
-        Get a synchronized (frame, detections) pair for a stream.
-
-        Implements anti-flicker and dynamic drift correction.
+        Optimized 'Latest-First' sync strategy.
+        Prioritizes smoothness by taking the most recent metadata.
         """
         result = self.video_reader.get_frame(stream_id, timeout=0.1)
         if result is None:
@@ -55,46 +54,35 @@ class SyncEngine:
 
         frame, frame_ts = result
         
-        # Apply drift correction to the search target
+        # Apply drift correction
         offset = self._offsets.get(stream_id, 0.0)
         search_ts = frame_ts + offset
         
-        all_objects = []
-        new_metadata_found = False
+        # NEW: Optimized one-pass pop. 
+        # Instead of while-looping thousands of items, we grab the closest 
+        # single packet (which contains an objects array in our Type 257 payload).
+        metadata = await self.kafka_consumer.pop_nearest(
+            stream_id=stream_id,
+            target_ts=search_ts,
+            tolerance_ms=settings.SYNC_TOLERANCE_MS,
+        )
 
-        # Aggregate multiple metadata entries within tolerance
-        while True:
-            metadata = await self.kafka_consumer.pop_nearest(
-                stream_id=stream_id,
-                target_ts=search_ts,
-                tolerance_ms=settings.SYNC_TOLERANCE_MS,
-            )
-            if not metadata:
-                break
+        if metadata:
+            all_objects = metadata.get("objects", [])
+            # Update drift estimate
+            meta_ts = float(metadata.get("timestamp", search_ts))
+            current_diff = meta_ts - frame_ts
+            self._offsets[stream_id] = (1 - self._alpha) * offset + self._alpha * current_diff
             
-            new_metadata_found = True
-            all_objects.extend(metadata.get("objects", []))
-            
-            # Update drift estimate using the first metadata entry's timestamp
-            if len(all_objects) == len(metadata.get("objects", [])):
-                meta_ts = float(metadata.get("timestamp", search_ts))
-                current_diff = meta_ts - frame_ts
-                self._offsets[stream_id] = (1 - self._alpha) * offset + self._alpha * current_diff
-
-            if len(all_objects) > 1000:
-                break
-
-        if new_metadata_found:
             self._last_detections[stream_id] = (frame_ts, all_objects)
             return frame, all_objects
         
+        # Anti-flicker hold
         last_entry = self._last_detections.get(stream_id)
         if last_entry:
             last_ts, last_objs = last_entry
-            age = frame_ts - last_ts
-            if 0 <= age <= self._hold_ttl_sec:
-                held_objs = [dict(obj, _is_held=True) for obj in last_objs]
-                return frame, held_objs
+            if 0 <= (frame_ts - last_ts) <= self._hold_ttl_sec:
+                return frame, [dict(obj, _is_held=True) for obj in last_objs]
 
         return frame, []
 

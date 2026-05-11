@@ -86,9 +86,9 @@ onnx-file=${MODEL_ONNX_FILE}
 model-engine-file=${MODEL_ENGINE_FILE}
 labelfile-path=${MODEL_LABELS_FILE}
 batch-size=${INFER_BATCH_SIZE}
-network-mode=0
+network-mode=2
 num-detected-classes=${MODEL_NUM_CLASSES}
-interval=3
+interval=1
 gie-unique-id=1
 process-mode=1
 network-type=0
@@ -179,7 +179,18 @@ perf-measurement-interval-sec=5
 enable=0
 
 [osd]
-enable=0
+enable=1
+gpu-id=0
+border-width=2
+text-size=12
+text-color=1;1;1;1
+text-bg-color=0.3;0.3;0.3;1
+font=Serif
+show-clock=1
+clock-x-offset=500
+clock-y-offset=20
+clock-text-size=12
+process-mode=0
 
 [streammux]
 gpu-id=0
@@ -187,7 +198,7 @@ live-source=1
 batch-size=1
 width=640
 height=640
-batched-push-timeout=40000
+batched-push-timeout=20000
 nvbuf-memory-type=0
 
 [primary-gie]
@@ -221,6 +232,19 @@ msg-conv-frame-interval=1
 msg-broker-proto-lib=/opt/nvidia/deepstream/deepstream-6.0/lib/libnvds_kafka_proto.so
 msg-broker-conn-str=${LAPTOP_A_IP};9092;${KAFKA_TOPIC}
 msg-broker-config=${KAFKA_CFG_DST}
+sync=0
+
+[sink1]
+enable=1
+type=4
+# RTSP Streaming (Annotated Video)
+rtsp-port=8555
+udp-port=5400
+gpu-id=0
+bitrate=4000000
+iframeinterval=30
+codec=1
+# codec: 1=h264, 2=h265
 sync=0
 EOF
 

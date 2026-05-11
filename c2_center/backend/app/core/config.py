@@ -31,8 +31,8 @@ class Settings(BaseSettings):
     MODELS_DIR: Path = _BACKEND_DIR / "ml_models"
 
     # --- Sync Engine ---
-    SYNC_TOLERANCE_MS: float = 200.0
-    VIDEO_QUEUE_MAXSIZE: int = 30
+    SYNC_TOLERANCE_MS: float = 100.0
+    VIDEO_QUEUE_MAXSIZE: int = 20
 
     # --- WebSocket ---
     WS_TARGET_FPS: int = 15
