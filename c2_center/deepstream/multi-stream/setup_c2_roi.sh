@@ -10,7 +10,7 @@ set -euo pipefail
 # ======================== CONFIGURATION ======================================
 # --- RCA Fix: Global Variable Sanitization ---
 # Strip hidden Windows carriage returns (\r) from ALL environment variables
-LAPTOP_A_IP=$(echo "${LAPTOP_A_IP:-172.16.1.162}" | tr -d '\r\n ')
+LAPTOP_A_IP=$(echo "${LAPTOP_A_IP:-192.168.55.100}" | tr -d '\r\n ')
 NUM_SOURCES=$(echo "${NUM_SOURCES:-1}" | tr -d '\r\n ')
 WORK_DIR=$(echo "${WORK_DIR:-$(pwd)}" | tr -d '\r\n ')
 KAFKA_TOPIC=$(echo "${KAFKA_TOPIC:-c2_metadata}" | tr -d '\r\n ')
@@ -198,8 +198,9 @@ live-source=1
 batch-size=1
 width=640
 height=640
-batched-push-timeout=20000
+batched-push-timeout=40000
 nvbuf-memory-type=0
+attach-sys-ts=1
 
 [primary-gie]
 enable=1
@@ -235,17 +236,12 @@ msg-broker-config=${KAFKA_CFG_DST}
 sync=0
 
 [sink1]
-enable=0
-type=4
-# RTSP Streaming (Annotated Video)
-rtsp-port=8555
-udp-port=5400
-gpu-id=0
-bitrate=4000000
-iframeinterval=30
-codec=1
-# codec: 1=h264, 2=h265
-sync=0
+enable=1
+type=1
+# FakeSink acts as the pipeline pacemaker. 
+# sync=1 and qos=1 forces GStreamer to drop frames upstream if Jetson falls behind real-time.
+sync=1
+qos=1
 EOF
 
 IFS=',' read -ra RTSP_PATH_ARR <<< "${RTSP_PATHS}"
@@ -262,6 +258,8 @@ enable=1
 type=4
 uri=rtsp://${LAPTOP_A_IP}:${RTSP_BASE_PORT}/${CAM_PATH}
 gpu-id=0
+latency=0
+drop-on-latency=1
 EOF
 done
 

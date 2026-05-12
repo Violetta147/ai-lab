@@ -109,12 +109,69 @@ class PipelineManager:
             try:
                 t0 = time.time()
 
+                # Pacing: Ensure we don't run faster than the target FPS to avoid metadata reuse
+                loop_start = time.time()
+                target_fps = 25.0
+                frame_time = 1.0 / target_fps
+
                 frame, objects = await self._sync.get_synced_frame(stream_id)
                 if frame is None:
-                    await asyncio.sleep(0.05)
+                    await asyncio.sleep(0.01)
                     continue
 
                 detections = metadata_to_detections(objects)
+
+                # ==================== DIAGNOSTIC LOGGING ====================
+                frame_h, frame_w = frame.shape[:2]
+                
+                # Log raw Kafka bbox BEFORE any scaling (first 3 objects)
+                if objects and not hasattr(self, '_diag_logged'):
+                    raw_sample = objects[:3]
+                    logger.warning(
+                        "[DIAG][%s] FRAME_RES=%dx%d | RAW Kafka objects(%d): %s",
+                        stream_id, frame_w, frame_h, len(objects),
+                        str([{k: v for k, v in o.items() if k in ('tracking_id', 'bbox')} for o in raw_sample]),
+                    )
+                    if len(detections) > 0:
+                        logger.warning(
+                            "[DIAG][%s] PRE-SCALE xyxy[0]: %s",
+                            stream_id, detections.xyxy[0].tolist(),
+                        )
+
+                # FIX: Scale bbox from inference resolution (640x640) to frame resolution.
+                # DeepStream's streammux resizes input to 640x640 for YOLO inference.
+                # The Kafka metadata contains bbox coords in that inference space.
+                # But the RTSP video frame is at camera native res (e.g. 1920x1080).
+                # Without scaling, boxes appear tiny/misplaced ("ghost boxes").
+                if len(detections) > 0:
+                    inf_w, inf_h = 640, 640  # streammux width/height in setup_c2_roi.sh
+                    if frame_w != inf_w or frame_h != inf_h:
+                        scale_x = frame_w / inf_w
+                        scale_y = frame_h / inf_h
+                        detections.xyxy[:, [0, 2]] *= scale_x
+                        detections.xyxy[:, [1, 3]] *= scale_y
+
+                # Log POST-SCALE bbox (once)
+                if objects and not hasattr(self, '_diag_logged'):
+                    if len(detections) > 0:
+                        logger.warning(
+                            "[DIAG][%s] POST-SCALE xyxy[0]: %s | scale=%.2fx%.2f",
+                            stream_id, detections.xyxy[0].tolist(),
+                            frame_w / 640, frame_h / 640,
+                        )
+                    self._diag_logged = True
+                # ============================================================
+
+                if not objects:
+                    # Skip analytics if no objects, but keep emitting stats to avoid WS timeout
+                    await self._emit_stats(stream_id, {"status": "running", "synced_objects": 0})
+                    # FPS Pacing Sleep still needed here
+                    loop_elapsed = time.time() - loop_start
+                    sleep_time = max(0, frame_time - loop_elapsed)
+                    if sleep_time > 0:
+                        await asyncio.sleep(sleep_time)
+                    continue
+
                 params = self._build_params(stream_id, detections, frame=frame)
 
                 # Periodic debug logging
@@ -141,9 +198,11 @@ class PipelineManager:
                     result.metrics["algorithm"] = self._dispatcher.get_active_slug(stream_id) or "heatmap"
                     await self._emit_stats(stream_id, result.metrics)
 
-                elapsed = time.time() - t0
-                if elapsed < interval:
-                    await asyncio.sleep(interval - elapsed)
+                # FPS Pacing Sleep
+                loop_elapsed = time.time() - loop_start
+                sleep_time = max(0, frame_time - loop_elapsed)
+                if sleep_time > 0:
+                    await asyncio.sleep(sleep_time)
 
             except asyncio.CancelledError:
                 break
