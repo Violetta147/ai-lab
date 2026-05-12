@@ -80,6 +80,7 @@ INFER_BATCH_SIZE=1
 cat > "${INFER_CFG}" << EOF
 [property]
 gpu-id=0
+scaling-compute-hw=1
 net-scale-factor=0.00392156862745098
 model-color-format=0
 onnx-file=${MODEL_ONNX_FILE}
