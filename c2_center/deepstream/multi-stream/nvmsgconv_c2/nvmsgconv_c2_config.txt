@@ -1,5 +1,0 @@
-[property]
-payload-type=257
-
-[custom]
-msg2p-lib=/root/deepstream_yolo/multi-stream/libnvds_msgconv_c2.so
