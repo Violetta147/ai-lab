@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     # --- Metadata source ---
     # "kafka" = DeepStream via Kafka (default)
     # "mqtt"  = data_pipeline tracking bridge via MQTT
-    METADATA_SOURCE: str = "kafka"
+    METADATA_SOURCE: str = "mqtt"
 
     # --- MQTT consumer (active when METADATA_SOURCE=mqtt) ---
     MQTT_BROKER: str = "127.0.0.1"

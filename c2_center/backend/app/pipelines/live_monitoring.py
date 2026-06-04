@@ -50,7 +50,9 @@ class LivePipelineHandle:
         try:
             await self.kafka_consumer.start()
         except Exception:
-            logger.warning("Kafka not available — running without metadata sync")
+            logger.warning(
+                "Metadata source failed to start — running without detection sync"
+            )
 
         self.pipeline_manager.start()
 
@@ -67,7 +69,7 @@ class LivePipelineHandle:
         try:
             await self.kafka_consumer.stop()
         except Exception:
-            logger.exception("Kafka consumer stop failed")
+            logger.exception("Metadata consumer stop failed")
         self.video_reader.stop()
 
     def __post_init__(self):

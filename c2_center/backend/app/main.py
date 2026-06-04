@@ -36,13 +36,12 @@ from app.api import playground as playground_module
 from app.api import streams as streams_module
 from app.api import zones as zones_module
 from app.core.config import settings
+from app.core.log_filters import HealthLogFilter
 from app.infrastructure.database.camera_repository import camera_repo
 from app.infrastructure.database.zone_repository import zone_repo
 from app.infrastructure.models.registry import ModelRegistry
 from app.pipelines.live_monitoring import wire_live_pipeline
 from app.ws.streamer import WsStreamer
-
-from app.core.log_filters import HealthLogFilter
 
 logging.basicConfig(
     level=logging.INFO,
@@ -73,13 +72,30 @@ async def lifespan(app: FastAPI):
     logger.info("C2 CENTER BACKEND STARTING")
     logger.info("=" * 50)
     logger.info("Configuration:")
-    logger.info("  Kafka: %s (topic: %s)", settings.KAFKA_BOOTSTRAP, settings.KAFKA_TOPIC)
+    if settings.METADATA_SOURCE == "mqtt":
+        logger.info(
+            "  Metadata: MQTT %s:%d (topic: %s)",
+            settings.MQTT_BROKER,
+            settings.MQTT_PORT,
+            settings.MQTT_TOPIC,
+        )
+    else:
+        logger.info(
+            "  Metadata: Kafka %s (topic: %s)",
+            settings.KAFKA_BOOTSTRAP,
+            settings.KAFKA_TOPIC,
+        )
     logger.info("  Models dir: %s", settings.MODELS_DIR)
 
     cameras = camera_repo.list_cameras()
     logger.info("  Cameras: %d configured", len(cameras))
     for cam in cameras:
-        logger.info("    - %s: %s (enabled: %s)", cam["stream_id"], cam["rtsp_url"], cam["enabled"])
+        logger.info(
+            "    - %s: %s (enabled: %s)",
+            cam["stream_id"],
+            cam["rtsp_url"],
+            cam["enabled"],
+        )
 
     discovered = model_registry.scan()
     logger.info("Discovered %d models", len(discovered))
@@ -88,7 +104,9 @@ async def lifespan(app: FastAPI):
     logger.info("Registered analytics plugins: %s", discovered_plugins)
 
     await pipeline.start()
-    logger.info("All services started. API: %s:%d", settings.API_HOST, settings.API_PORT)
+    logger.info(
+        "All services started. API: %s:%d", settings.API_HOST, settings.API_PORT
+    )
 
     yield
 
@@ -112,7 +130,9 @@ app.add_middleware(
 )
 
 # --- REST API routes ---
-app.include_router(streams_module.get_router(pipeline.sync_engine, pipeline.kafka_consumer))
+app.include_router(
+    streams_module.get_router(pipeline.sync_engine, pipeline.kafka_consumer)
+)
 app.include_router(cameras_module.get_router(pipeline))
 app.include_router(zones_module.router)
 app.include_router(analytics_api_module.get_router(pipeline))
