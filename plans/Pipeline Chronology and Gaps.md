@@ -6,11 +6,9 @@ Tài liệu này phân tích chi tiết quy trình vận hành của pipeline th
 
 ## I. Trình tự Hoạt động theo Thời gian (Timeline)
 
-### Bước 1: Thu phát luồng Video (RTSP Stream - Liên tục, Thời gian thực)
-*   **Video Nguồn (Demo)**: Hiện tại, hệ thống sử dụng lệnh `ffmpeg` để stream một file video có sẵn lên MediaMTX, thay thế cho IP Camera thực tế để dễ dàng test và debug.
-*   **MediaMTX**: Nhận luồng RTSP từ `ffmpeg` và phân phối lại cho hai bên:
-    1.  **edge_server** (chạy trên Jetson Nano): Đọc luồng video qua OpenCV VideoCapture.
-    2.  **c2_center** (Web Server): Bộ đọc RtspVideoReader liên tục kéo các khung hình từ MediaMTX với tốc độ khoảng 25 FPS và xếp vào một hàng đợi bộ đệm trượt (sliding queue) tối đa 150 khung hình trên RAM.
+### Bước 1: Thu phát luồng Video (Liên tục, Thời gian thực)
+*   **Video Nguồn (Demo)**: Hiện tại, hệ thống sử dụng lệnh `ffmpeg` để truyền luồng video **chỉ cho Jetson Nano** (thay thế cho Camera thực tế để dễ test). Hoàn toàn không còn sử dụng MediaMTX để phân phối mạng.
+*   **edge_server** (chạy trên Jetson Nano): Đọc luồng video trực tiếp qua OpenCV VideoCapture.
 
 ### Bước 2: Xử lý tại Biên & Lọc Dữ liệu (Local Inference & Active Learning - Từng khung hình trên Jetson)
 *   **Chạy AI (Inference)**: `edge_server` trên Jetson chạy model YOLOv8n trên từng khung hình đọc được từ RTSP để phát hiện vật thể.
@@ -39,10 +37,10 @@ Tài liệu này phân tích chi tiết quy trình vận hành của pipeline th
 *   Khi phát hiện payload có chứa đường dẫn ảnh `image_url` (tức là ảnh khó đã được upload lên MinIO), nó sẽ ghi bản ghi này vào cơ sở dữ liệu PostgreSQL với trạng thái `NEW`.
 
 ### Bước 5: Đồng bộ Khung hình & Metadata hiển thị Web (Phía `c2_center` Backend)
-*   Bộ consumer MQTT của `c2_center` liên tục nhận dữ liệu đã được gán ID từ topic `traffic/tracked`.
+*   Bộ consumer MQTT của `c2_center` liên tục nhận luồng ảnh JPEG từ `traffic/live_video` và dữ liệu metadata từ `traffic/live_tracking` (hoặc `traffic/tracked`).
 *   **SyncEngine**:
-    *   Khi có metadata mới, `SyncEngine` tính toán độ lệch đồng hồ (clock drift) giữa Jetson và Server.
-    *   Nó "quay ngược thời gian" tìm trong hàng đợi video RTSP ra khung hình khớp nhất với timestamp của metadata.
+    *   `SyncEngine` giữ nguyên thuật toán đồng bộ thời gian (Clock Drift logic) làm cốt lõi vì đây là logic luôn luôn đúng.
+    *   Thay vì tìm trong hàng đợi RTSP, nó gom cặp khung hình ảnh (JPEG) từ MQTT khớp nhất với timestamp của metadata.
 *   **Analytics**: Chạy các thuật toán đếm xe, đo mật độ chiếm dụng đường hoặc vẽ heatmap trên khung hình đã đồng bộ.
 
 ### Bước 6: Hiển thị giao diện người dùng (Thời gian thực - Client Web)
