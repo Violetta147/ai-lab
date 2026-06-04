@@ -8,6 +8,8 @@ auto-reconnects with exponential backoff on failure.
 
 import logging
 import queue
+import collections
+import logging
 import threading
 import time
 
@@ -28,8 +30,9 @@ class RtspVideoReader:
     """
 
     def __init__(self) -> None:
-        # stream_id -> Queue of (frame: np.ndarray, timestamp: float)
-        self.queues: dict[str, queue.Queue] = {}
+        # stream_id -> deque of (frame: np.ndarray, timestamp: float)
+        self.buffers: dict[str, collections.deque] = {}
+        self.buffer_locks: dict[str, threading.Lock] = {}
         self._threads: dict[str, threading.Thread] = {}
         self._running = False
 
@@ -44,7 +47,7 @@ class RtspVideoReader:
         logger.info("RTSP video reader stopping...")
 
     def _reader_loop(
-        self, stream_id: str, rtsp_url: str, q: queue.Queue
+        self, stream_id: str, rtsp_url: str, buffer: collections.deque, lock: threading.Lock
     ) -> None:
         """Reader loop for a single stream — runs in its own thread."""
         cap = None
@@ -52,13 +55,14 @@ class RtspVideoReader:
         retry_count = 0
 
         while self._running:
-            if stream_id not in self.queues:
+            if stream_id not in self.buffers:
                 logger.info("[%s] Stream removed, stopping reader loop", stream_id)
                 break
 
             if retry_count >= 3:
                 logger.error("[%s] Max connection retries reached (3). Stopping reader thread.", stream_id)
-                self.queues.pop(stream_id, None)
+                self.buffers.pop(stream_id, None)
+                self.buffer_locks.pop(stream_id, None)
                 self._threads.pop(stream_id, None)
                 break
 
@@ -103,13 +107,10 @@ class RtspVideoReader:
                 retry_count = 0
 
                 try:
-                    q.put_nowait((frame, capture_ts))
-                except queue.Full:
-                    try:
-                        q.get_nowait()  # Drop oldest frame smoothly
-                    except queue.Empty:
-                        pass
-                    q.put_nowait((frame, capture_ts))
+                    with lock:
+                        buffer.append((frame, capture_ts))
+                except Exception:
+                    pass
 
             except Exception:
                 retry_count += 1
@@ -124,21 +125,33 @@ class RtspVideoReader:
             cap.release()
         logger.info("[%s] Reader thread exited.", stream_id)
 
-    def get_frame(
-        self, stream_id: str, timeout: float = 1.0
+    def get_closest_frame(
+        self, stream_id: str, target_ts: float, max_latency: float = 1.0
     ) -> tuple[np.ndarray, float] | None:
-        """Get the latest frame from a stream's queue."""
-        q = self.queues.get(stream_id)
-        if q is None:
+        """Find the buffered frame whose capture_ts is closest to target_ts."""
+        buffer = self.buffers.get(stream_id)
+        lock = self.buffer_locks.get(stream_id)
+        
+        if buffer is None or lock is None:
             return None
-        try:
-            return q.get(timeout=timeout)
-        except queue.Empty:
-            return None
+            
+        with lock:
+            if not buffer:
+                return None
+                
+            # Find the frame with minimum absolute time difference
+            best_frame, best_ts = min(buffer, key=lambda x: abs(x[1] - target_ts))
+            
+            # If the best frame is absurdly far away from target, drop it
+            if abs(best_ts - target_ts) > max_latency:
+                # Return the absolute newest frame as fallback (Latest-to-Latest)
+                return buffer[-1]
+                
+            return best_frame, best_ts
 
     def get_stream_ids(self) -> list[str]:
         """Return list of configured stream IDs."""
-        return list(self.queues.keys())
+        return list(self.buffers.keys())
 
     def is_stream_connected(self, stream_id: str) -> bool:
         """Check if a stream's thread is alive."""
@@ -147,7 +160,7 @@ class RtspVideoReader:
 
     def add_stream(self, stream_id: str, rtsp_url: str) -> bool:
         """Dynamically add a new stream without restarting."""
-        if stream_id in self.queues:
+        if stream_id in self.buffers:
             logger.warning("Stream %s already exists", stream_id)
             return False
 
@@ -155,17 +168,15 @@ class RtspVideoReader:
             logger.warning("RTSP reader not running")
             return False
 
-        # Video frame buffer: sized to match the metadata pipeline delay.
-        # DIAGNOSTIC MEASUREMENT: metadata arrives ~620ms after the video frame.
-        # At 25fps (40ms/frame), 16 frames = 640ms delay ≈ metadata pipeline latency.
-        # Since queue.get() reads the OLDEST frame (FIFO head), this naturally
-        # delays video by ~640ms, aligning it with the Kafka metadata timestamps.
-        q = queue.Queue(maxsize=18)
-        self.queues[stream_id] = q
+        buffer = collections.deque(maxlen=150)
+        lock = threading.Lock()
+        
+        self.buffers[stream_id] = buffer
+        self.buffer_locks[stream_id] = lock
 
         thread = threading.Thread(
             target=self._reader_loop,
-            args=(stream_id, rtsp_url, q),
+            args=(stream_id, rtsp_url, buffer, lock),
             daemon=True,
             name=f"video-{stream_id}",
         )
@@ -176,11 +187,12 @@ class RtspVideoReader:
 
     def remove_stream(self, stream_id: str) -> bool:
         """Dynamically remove a stream — its reader thread exits next cycle."""
-        if stream_id not in self.queues:
+        if stream_id not in self.buffers:
             logger.warning("Stream %s not found", stream_id)
             return False
 
-        self.queues.pop(stream_id, None)
+        self.buffers.pop(stream_id, None)
+        self.buffer_locks.pop(stream_id, None)
         self._threads.pop(stream_id, None)
         logger.info("Stream marked for removal: %s (will stop on next cycle)", stream_id)
         return True

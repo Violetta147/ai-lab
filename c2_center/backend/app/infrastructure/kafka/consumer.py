@@ -75,20 +75,6 @@ class KafkaConsumerService:
             settings.KAFKA_BOOTSTRAP,
             settings.KAFKA_TOPIC,
         )
-        # Generate a unique group ID on every startup to ignore committed offsets.
-        # This ensures auto_offset_reset="latest" actually applies, preventing the 
-        # consumer from processing historical backlogged messages after a restart.
-        import uuid
-        unique_group_id = f"{settings.KAFKA_GROUP_ID}_{uuid.uuid4().hex[:8]}"
-
-        self._consumer = SyncKafkaConsumer(
-            settings.KAFKA_TOPIC,
-            bootstrap_servers=settings.KAFKA_BOOTSTRAP,
-            group_id=unique_group_id,
-            value_deserializer=lambda m: json.loads(m.decode("utf-8")),
-            auto_offset_reset="latest",
-            consumer_timeout_ms=500,  # poll returns after 500ms if no messages
-        )
         self._running = True
         self._thread = threading.Thread(
             target=self._consume_thread,
@@ -110,8 +96,23 @@ class KafkaConsumerService:
     def _consume_thread(self) -> None:
         """Main consume loop — runs in its own thread, never blocks asyncio."""
         logger.info("Kafka consume thread started.")
+        import uuid
+        
         while self._running:
             try:
+                # Recreate consumer if it was broken or not initialized
+                if self._consumer is None:
+                    unique_group_id = f"{settings.KAFKA_GROUP_ID}_{uuid.uuid4().hex[:8]}"
+                    self._consumer = SyncKafkaConsumer(
+                        settings.KAFKA_TOPIC,
+                        bootstrap_servers=settings.KAFKA_BOOTSTRAP,
+                        group_id=unique_group_id,
+                        value_deserializer=lambda m: json.loads(m.decode("utf-8")),
+                        auto_offset_reset="latest",
+                        consumer_timeout_ms=500,
+                    )
+                    logger.info("Kafka consumer object created/recreated.")
+
                 # poll() returns immediately with available records (up to max_records)
                 records = self._consumer.poll(timeout_ms=100, max_records=500)
                 for _tp, messages in records.items():
@@ -120,10 +121,17 @@ class KafkaConsumerService:
                             self._process_message(msg.value)
                         except Exception:
                             logger.exception("Error processing Kafka message")
-            except Exception:
+                            
+            except Exception as e:
                 if self._running:
-                    logger.exception("Kafka poll error, retrying in 1s...")
-                    time.sleep(1.0)
+                    logger.error("Kafka socket/poll error: %s. Reconnecting in 2s...", str(e))
+                    try:
+                        if self._consumer:
+                            self._consumer.close()
+                    except Exception:
+                        pass
+                    self._consumer = None
+                    time.sleep(2.0)
 
         logger.info("Kafka consume thread exited.")
 

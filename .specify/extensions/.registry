@@ -15,7 +15,7 @@
           "speckit.git.initialize",
           "speckit.git.commit"
         ],
-        "cursor-agent": [
+        "agy": [
           "speckit.git.feature",
           "speckit.git.validate",
           "speckit.git.remote",
@@ -40,7 +40,7 @@
           "speckit.superpowers.execute",
           "speckit.superpowers.review"
         ],
-        "cursor-agent": [
+        "agy": [
           "speckit.superpowers.status",
           "speckit.superpowers.brainstorm",
           "speckit.superpowers.tasks",
@@ -64,7 +64,7 @@
           "speckit.test.gaps",
           "speckit.test.plan"
         ],
-        "cursor-agent": [
+        "agy": [
           "speckit.test.generate",
           "speckit.test.coverage",
           "speckit.test.gaps",

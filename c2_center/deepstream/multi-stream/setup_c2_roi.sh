@@ -10,7 +10,7 @@ set -euo pipefail
 # ======================== CONFIGURATION ======================================
 # --- RCA Fix: Global Variable Sanitization ---
 # Strip hidden Windows carriage returns (\r) from ALL environment variables
-LAPTOP_A_IP=$(echo "${LAPTOP_A_IP:-192.168.55.100}" | tr -d '\r\n ')
+LAPTOP_A_IP=$(echo "${LAPTOP_A_IP:-192.168.1.27}" | tr -d '\r\n ')
 NUM_SOURCES=$(echo "${NUM_SOURCES:-1}" | tr -d '\r\n ')
 WORK_DIR=$(echo "${WORK_DIR:-$(pwd)}" | tr -d '\r\n ')
 KAFKA_TOPIC=$(echo "${KAFKA_TOPIC:-c2_metadata}" | tr -d '\r\n ')
@@ -201,7 +201,7 @@ width=640
 height=640
 batched-push-timeout=40000
 nvbuf-memory-type=0
-attach-sys-ts=1
+attach-sys-ts-as-ntp=1
 
 [primary-gie]
 enable=1

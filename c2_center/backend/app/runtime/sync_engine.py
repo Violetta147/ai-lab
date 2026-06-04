@@ -6,7 +6,9 @@ Holds references to the video reader (frame source) and Kafka consumer
 returns the latest frame plus its best-matching detection list.
 """
 
+import collections
 import logging
+import time
 
 import numpy as np
 
@@ -38,82 +40,76 @@ class SyncEngine:
         # TTL=0: disabled — Latest-to-Latest strategy means stale holds = ghost boxes
         self._hold_ttl_sec = 0.0
         
-        # Dynamic Drift Correction for Diagnostics: {stream_id: average_offset_sec}
-        self._offsets: dict[str, float] = {}
-        self._alpha = 0.05  # Smoothing factor for drift
+        # Sliding Window for Pure Clock Drift extraction
+        # stream_id -> deque of raw (now - kafka_ts) differences
+        self._offset_windows: dict[str, collections.deque] = {}
 
     async def get_synced_frame(
         self, stream_id: str
     ) -> tuple[np.ndarray | None, list[dict]]:
         """
-        Optimized 'Latest-to-Latest' sync strategy.
-        Since both Jetson (latency=0) and Web Server (nobuffer) run strictly live, 
-        we can simply pair the absolute newest frame with the absolute newest Kafka metadata.
-        This completely eliminates timestamp drift/EMA brittleness.
+        Frame Buffering Sync Strategy (Time-Travel Matching).
+        Waits for metadata, calculates the true historical capture time of the frame,
+        and retrieves the exact matching frame from the video reader's past buffer.
         """
-        result = self.video_reader.get_frame(stream_id, timeout=0.1)
+        # 1. Grab the latest metadata FIRST
+        metadata = await self.kafka_consumer.pop_latest(stream_id)
+        now = time.time()
+        
+        if not metadata:
+            # If no new metadata, just get the absolute newest video frame to keep the stream alive
+            result = self.video_reader.get_closest_frame(stream_id, now)
+            if result is None:
+                return None, []
+            frame, frame_ts = result
+            # Re-use last known bounding boxes
+            _, last_objs = self._last_detections.get(stream_id, (0, []))
+            return frame, last_objs
+
+        # 2. We have new metadata!
+        kafka_ts = metadata.get("timestamp", 0)
+        all_objects = metadata.get("objects", [])
+        
+        raw_diff = now - kafka_ts if kafka_ts > 0 else 0
+        
+        # Add the raw difference to the sliding window (track last 100 frames)
+        if stream_id not in self._offset_windows:
+            self._offset_windows[stream_id] = collections.deque(maxlen=100)
+        self._offset_windows[stream_id].append(raw_diff)
+            
+        # The Unchangeable Order Property (NTP-style Minimum Filter):
+        # raw_diff = Clock_Drift + Network_Latency + Processing_Latency.
+        # Since Processing/Network Latency is always > 0 and fluctuates (Jitter),
+        # the MINIMUM raw_diff in our window represents the fastest possible packet 
+        # (closest to pure Clock Drift with zero jitter).
+        pure_clock_drift = min(self._offset_windows[stream_id])
+        
+        # Calculate the exact timestamp when this frame arrived at our backend
+        # No magic numbers needed! The pure clock drift natively aligns the sequence.
+        expected_capture_ts = kafka_ts + pure_clock_drift
+        
+        # 3. Time-Travel: Fetch the historical frame from the deque buffer
+        result = self.video_reader.get_closest_frame(stream_id, expected_capture_ts, max_latency=1.0)
+        
         if result is None:
             return None, []
-
+            
         frame, frame_ts = result
         
-        # Simply grab the absolute latest Kafka metadata
-        metadata = await self.kafka_consumer.pop_latest(stream_id)
-
-        if metadata:
-            all_objects = metadata.get("objects", [])
-            kafka_ts = metadata.get("timestamp", 0)
+        # --- DIAGNOSTIC LOGGING ---
+        if not hasattr(self, '_diag_sync_count'):
+            self._diag_sync_count = 0
             
-            # --- DIAGNOSTIC: measure video-metadata time delta ---
-            if not hasattr(self, '_diag_sync_count'):
-                self._diag_sync_count = 0
-                self._last_kafka_ts: dict[str, float] = {}
-                self._reuse_count: dict[str, int] = {}
+        self._diag_sync_count += 1
+        if self._diag_sync_count % 100 == 0:
+            error_ms = abs(expected_capture_ts - frame_ts) * 1000
+            logger.info(
+                "[SYNC-DIAG][%s] Video fetched from %dms ago. Alignment error: %dms | Objects: %d",
+                stream_id, (now - frame_ts) * 1000, error_ms, len(all_objects)
+            )
             
-            self._diag_sync_count += 1
-            prev_kafka_ts = self._last_kafka_ts.get(stream_id, 0)
-            
-            if kafka_ts == prev_kafka_ts:
-                self._reuse_count[stream_id] = self._reuse_count.get(stream_id, 0) + 1
-            else:
-                # New metadata frame arrived
-                raw_delta = frame_ts - kafka_ts if kafka_ts > 0 else 0
-                
-                # --- AUTO CLOCK-DRIFT COMPENSATOR (For Diagnostics Only) ---
-                # If clocks are out of sync by > 10 seconds (no NTP), we establish a baseline offset
-                if stream_id not in self._offsets:
-                    self._offsets[stream_id] = raw_delta if abs(raw_delta) > 10.0 else 0.0
-                else:
-                    # Slowly adapt to long-term drift
-                    if abs(raw_delta) > 10.0:
-                        self._offsets[stream_id] = (1 - self._alpha) * self._offsets[stream_id] + self._alpha * raw_delta
-                
-                delta = raw_delta - self._offsets[stream_id]
-                
-                if self._diag_sync_count <= 100 or self._diag_sync_count % 100 == 0:
-                    reuses = self._reuse_count.get(stream_id, 0)
-                    logger.warning(
-                        "[SYNC-DIAG][%s] video_ts=%.3f kafka_ts=%.3f DELTA=%.0fms | "
-                        "prev_metadata_reused=%d_times | objects=%d",
-                        stream_id, frame_ts, kafka_ts, delta * 1000,
-                        reuses, len(all_objects),
-                    )
-                
-                # Hidden Error Detection: Metadata is way too old
-                if delta > 1.0:
-                    logger.error(
-                        "[SYNC-ERROR][%s] STALE METADATA! Age is %.1fs. Bounding boxes will 'ghost'!",
-                        stream_id, delta
-                    )
-                
-                self._reuse_count[stream_id] = 0
-                self._last_kafka_ts[stream_id] = kafka_ts
-            # --- END DIAGNOSTIC ---
-            
-            self._last_detections[stream_id] = (frame_ts, all_objects)
-            return frame, all_objects
-        
-        return frame, []
+        self._last_detections[stream_id] = (frame_ts, all_objects)
+        return frame, all_objects
 
     def get_stream_ids(self) -> list[str]:
         """Return all configured stream IDs."""
