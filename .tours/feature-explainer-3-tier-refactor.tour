@@ -1,0 +1,58 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "3-Tier Edge Server & Backend Decoupling",
+  "description": "Walkthrough of the new 3-tier architecture for Edge Server and Duck Typed SyncEngine for C2 Center.",
+  "ref": "main",
+  "steps": [
+    {
+      "directory": "edge_server",
+      "title": "Edge Server Root",
+      "description": "The Edge Server runs YOLOv8 on Jetson Nano. We shifted from sequential IO to a 3-tier non-blocking architecture."
+    },
+    {
+      "file": "edge_server/main.py",
+      "line": 103,
+      "title": "Thread Initialization",
+      "description": "Here, `start_threads` is invoked. It creates the `ram_queue` and sets up the Disk Writer and Background Sync daemons before the main AI loop starts."
+    },
+    {
+      "file": "edge_server/inference.py",
+      "pattern": "def process_and_send\\(",
+      "title": "Luồng 1: Main AI Loop",
+      "description": "The primary detection loop now avoids all file IO. It publishes live tracking to MQTT immediately, then pushes raw frames into the `ram_queue` with `put_nowait()`. If full, it drops the AL frame to prevent Out-Of-Memory crashes."
+    },
+    {
+      "file": "edge_server/threads.py",
+      "pattern": "def disk_writer_worker",
+      "title": "Luồng 2: Disk Writer",
+      "description": "This thread polls `ram_queue`. It explicitly checks if disk space is above `LOCAL_DISK_SAFETY_LIMIT_MB` (500MB) before saving files to the local storage (SD/eMMC). Crucially, it calls `gc.collect()` to aggressively clear OpenCV image memory."
+    },
+    {
+      "file": "edge_server/threads.py",
+      "pattern": "def background_sync_worker",
+      "title": "Luồng 3: Background Sync",
+      "description": "Periodically calls the MinIO upload functions. By isolating this, network timeouts do not block the live object tracking loop."
+    },
+    {
+      "directory": "c2_center/backend",
+      "title": "C2 Center Backend",
+      "description": "The Backend server receives live streams and metadata. We decoupled it from hardcoded RTSP/Kafka logic."
+    },
+    {
+      "file": "c2_center/backend/app/runtime/sync_engine.py",
+      "pattern": "class SyncEngine:",
+      "title": "SyncEngine Decoupling",
+      "description": "The SyncEngine now accepts any `VideoReaderProtocol` and `MetadataReaderProtocol` via dependency injection (Duck Typing)."
+    },
+    {
+      "file": "c2_center/backend/app/infrastructure/mqtt/mqtt_video_adapter.py",
+      "pattern": "class MqttVideoAdapter:",
+      "title": "MQTT Adapters",
+      "description": "The new `MqttVideoAdapter` subscribes to `traffic/live_video`, fulfilling the `VideoReaderProtocol` contract for live feed ingestion."
+    },
+    {
+      "title": "Next Steps",
+      "description": "You can now run unit tests in `test_inference.py` and `test_sync_engine.py` to see this decoupled logic in action."
+    }
+  ]
+}
