@@ -1,5 +1,0 @@
-Codemap Analysis Report
------------------------
-- Generated architecture codemap for the new C++ Edge Server.
-- New dependencies detected: CUDA, TensorRT, OpenCV, Paho MQTT, libcurl.
-- Architecture highlights: Real-time inference loop with thread-safe RAM queues and disconnected-operation sync threads.
