@@ -1,0 +1,46 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "Infrastructure & Docker Architecture",
+  "steps": [
+    {
+      "file": "docker-compose.yml",
+      "line": 4,
+      "description": "# Root Infrastructure Compose\n\nThis is the **Core Infrastructure** file. It provisions the backbone services that both `c2_center` and `data_pipeline` depend on.\n\nHere we define **Mosquitto MQTT**, replacing the old Kafka broker. It maps port `1883` to the host so the Jetson Nano can publish tracking data directly here."
+    },
+    {
+      "file": "docker-compose.yml",
+      "line": 15,
+      "description": "# Persistence Layer (PostgreSQL)\n\nThis database stores historical metadata, tracking logs, and handles integration state for CVAT. Both the FastAPI backend and Celery workers will connect here."
+    },
+    {
+      "file": "docker-compose.yml",
+      "line": 28,
+      "description": "# Task Queue Broker (Redis)\n\nRedis acts as the message broker and result backend for Celery. It is essential for background tasks in the data pipeline."
+    },
+    {
+      "file": "docker-compose.yml",
+      "line": 36,
+      "description": "# Object Storage (MinIO)\n\nMinIO is an S3-compatible local storage. The system uploads cropped detection images from the edge stream here so they can be sent to CVAT for labeling later."
+    },
+    {
+      "file": "docker-compose.yml",
+      "line": 53,
+      "description": "# Shared Network\n\nWe define a custom bridge network `mlops_traffic_net`. This allows our application containers (in other docker-compose files) to talk to these infra containers securely using their service names (like `mqtt`, `db`, `redis`)."
+    },
+    {
+      "file": "data_pipeline/pipeline/docker-compose.yml",
+      "line": 3,
+      "description": "# Application Layer Compose\n\nNow we switch to the application compose file inside `data_pipeline`. \n\nNotice the `worker` service. It doesn't setup Redis itself; it connects to `redis:6379/0` (which is running in the root infra compose) to process background tracking and DB insertions."
+    },
+    {
+      "file": "data_pipeline/pipeline/docker-compose.yml",
+      "line": 50,
+      "description": "# The MQTT Listener\n\nThis specific container runs the Python script that listens to Mosquitto. It waits for JSON payloads from the Jetson Nano and triggers tracking pipelines. Notice the `depends_on` and network mapping ensuring it connects to the `mqtt` container."
+    },
+    {
+      "file": "data_pipeline/pipeline/docker-compose.yml",
+      "line": 70,
+      "description": "# External Network Hook\n\nThis is the magic link! By setting `external: true`, Docker knows not to create a new network here. Instead, it attaches these application containers to the `mlops_traffic_net` created by our root `docker-compose.yml`.\n\nThis separation of concerns means you can bring down your Python apps without killing your database or message broker!"
+    }
+  ]
+}
