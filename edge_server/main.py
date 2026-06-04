@@ -45,12 +45,15 @@ from .config import (
     RULE_OOD_VEHICLE_TOP_ZONE_MAX_Y,
     USE_VIDEO_SOURCE,
     VIDEO_PATH,
+    RAM_QUEUE_MAXSIZE,
 )
+import queue
 from .buffer_store import sync_buffer_to_server
 from .inference import process_and_send
 from .logger import log
 from .minio_client import create_minio_client
 from .mqtt_client import create_mqtt_client
+from .threads import start_threads
 
 
 def main() -> None:
@@ -101,7 +104,11 @@ def main() -> None:
     if not capture.isOpened():
         raise RuntimeError(f"Cannot open source: {video_source}")
 
-    log(f"Start processing loop. source={video_source}")
+    ram_queue = queue.Queue(maxsize=RAM_QUEUE_MAXSIZE)
+    # Start Luồng 2 (Disk Writer) và Luồng 3 (Sync)
+    start_threads(ram_queue, minio_client, mqtt_client_instance)
+
+    log(f"Start processing loop (Luồng 1). source={video_source}")
     try:
         from .ota_updater import ota_manager
         while capture.isOpened():
@@ -116,21 +123,18 @@ def main() -> None:
                 log("Reached end of stream or failed to read frame.")
                 break
 
-            sync_buffer_to_server(
-                minio_client=minio_client,
-                mqtt_client_instance=mqtt_client_instance,
-                camera_id=CAMERA_ID,
-            )
             process_and_send(
                 frame=frame,
                 model=model,
-                minio_client=minio_client,
+                ram_queue=ram_queue,
                 mqtt_client_instance=mqtt_client_instance,
                 camera_id=CAMERA_ID,
                 active_learning_filter=active_learning_filter,
                 publish_gate=publish_gate,
                 rule_ood_filter=rule_ood_filter,
             )
+    except KeyboardInterrupt:
+        log("Received KeyboardInterrupt, stopping...")
     finally:
         capture.release()
         mqtt_client_instance.loop_stop()

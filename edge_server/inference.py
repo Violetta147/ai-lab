@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import queue
 import time
+import base64
 
 import cv2
-from minio import Minio
 from paho.mqtt import client as mqtt_client
 from ultralytics import YOLO
 
@@ -12,18 +13,16 @@ from .buffer_store import (
     build_detection_metadata,
     build_image_name,
     publish_detection,
-    save_metadata_to_buffer,
-    save_frame_to_buffer,
-    upload_buffer_file,
+    publish_video_frame,
 )
-from .config import ACTIVE_LEARNING_CONF_MIN, ACTIVE_LEARNING_ENABLED, CONFIDENCE_THRESHOLD
+from .config import ACTIVE_LEARNING_CONF_MIN, ACTIVE_LEARNING_ENABLED, CONFIDENCE_THRESHOLD, LIVE_MQTT_TOPIC
 from .logger import log
 
 
 def process_and_send(
     frame: cv2.typing.MatLike,
     model: YOLO,
-    minio_client: Minio,
+    ram_queue: queue.Queue,
     mqtt_client_instance: mqtt_client.Client,
     camera_id: str,
     active_learning_filter: ActiveLearningFilter,
@@ -82,29 +81,30 @@ def process_and_send(
                 "bbox": [int(b[0]), int(b[1]), int(b[2]), int(b[3])]
             })
 
-        # 7. Lưu tạm ảnh vào Buffer và upload lên MinIO
-        raw_local_path = save_frame_to_buffer(frame, raw_image_name)
-        raw_uploaded = upload_buffer_file(minio_client, raw_local_path, raw_image_name)
+        # 7. Gửi Live Telemetry (Tọa độ) và Live Video (Ảnh nén)
+        metadata = {
+            "camera_id": camera_id,
+            "image_url": raw_image_name,
+            "timestamp": time.time(),
+            "trigger_reason": save_reason,
+            "detections": detections_list
+        }
 
-        if raw_uploaded:
-            # 8. Tạo Metadata JSON tổng hợp (Theo định dạng Server yêu cầu)
-            metadata = {
-                "camera_id": camera_id,
-                "image_url": raw_image_name, # Key quan trọng để Server tải ảnh
-                "timestamp": time.time(),
-                "trigger_reason": save_reason,
-                "detections": detections_list # Mảng chứa toàn bộ vật thể
-            }
-            
+        try:
+            publish_detection(mqtt_client_instance, metadata, LIVE_MQTT_TOPIC)
+            # Nén và publish video frame
+            _, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 60])
+            b64_img = base64.b64encode(buffer).decode('utf-8')
+            publish_video_frame(mqtt_client_instance, camera_id, time.time(), b64_img)
+        except Exception as exc:
+            log(f"❌ Live publish failed: {exc}")
+
+        # 8. Đưa vào Queue cho Active Learning / OOD (Luồng 2 xử lý)
+        if al_hit or rule_ood_hit:
             try:
-                # Gửi tin nhắn duy nhất qua MQTT
-                publish_detection(mqtt_client_instance, metadata)
-                log(f"✅ Successfully published {len(detections_list)} detections for {raw_image_name}")
-            except Exception as exc:
-                # Nếu mất mạng, lưu JSON vào buffer để gửi lại sau
-                save_metadata_to_buffer(camera_id, metadata)
-                log(f"❌ Live publish failed, metadata buffered: {exc}")
-        else:
-            log(f"❌ Failed to upload image {raw_image_name}, skipping MQTT.")
+                ram_queue.put_nowait({"frame": frame, "metadata": metadata})
+                log(f"📦 Pushed to RAM queue. Queue size: {ram_queue.qsize()}")
+            except queue.Full:
+                log("⚠️ RAM Queue FULL! Dropped frame to protect memory.")
 
 

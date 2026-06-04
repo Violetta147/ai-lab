@@ -19,6 +19,7 @@ from .config import (
     MQTT_QOS,
     MQTT_PUBLISH_WAIT_TIMEOUT_SECONDS,
     MQTT_TOPIC,
+    LIVE_MQTT_TOPIC,
     MINIO_BUCKET,
 )
 from .logger import log
@@ -103,11 +104,12 @@ def upload_buffer_file(minio_client: Minio, local_path: str, object_name: str) -
 def publish_detection(
     mqtt_client_instance: mqtt_client.Client,
     metadata: DetectionMetadata,
+    topic: str = MQTT_TOPIC,
 ) -> None:
     payload = dict(metadata)
 
     result = mqtt_client_instance.publish(
-        MQTT_TOPIC,
+        topic,
         json.dumps(payload),
         qos=MQTT_QOS,
     )
@@ -119,6 +121,19 @@ def publish_detection(
         raise TimeoutError(
             f"MQTT publish did not receive PUBACK in {MQTT_PUBLISH_WAIT_TIMEOUT_SECONDS} seconds."
         )
+
+
+def publish_video_frame(
+    mqtt_client_instance: mqtt_client.Client,
+    camera_id: str,
+    timestamp: float,
+    b64_img: str
+) -> None:
+    payload = {"camera_id": camera_id, "timestamp": timestamp, "frame": b64_img}
+    result = mqtt_client_instance.publish(LIVE_VIDEO_TOPIC, json.dumps(payload), qos=MQTT_QOS)
+    if result.rc != 0:
+        raise RuntimeError(f"Failed to publish MQTT video message, rc={result.rc}")
+    # Fire and forget for video to not block inference
 
 
 def sync_buffer_to_server(
