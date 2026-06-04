@@ -1,0 +1,41 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "Data Pipeline and Tracking",
+  "description": "Walkthrough of how the data pipeline captures metadata from edge devices and assigns tracking IDs via IoU.",
+  "ref": "main",
+  "steps": [
+    {
+      "directory": "data_pipeline/pipeline",
+      "title": "Pipeline Root",
+      "description": "This is the core execution path for processing edge detections."
+    },
+    {
+      "file": "data_pipeline/pipeline/services/tracking_bridge.py",
+      "line": 33,
+      "title": "Tracking Bridge",
+      "description": "The entry point for the real-time tracking pipeline. It subscribes to raw detections and publishes tracked objects."
+    },
+    {
+      "file": "data_pipeline/pipeline/services/tracking_bridge.py",
+      "line": 55,
+      "title": "Message Handler",
+      "description": "Processes raw JSON MQTT messages from edge nodes. It parses out camera ID, timestamp, and the raw object detections."
+    },
+    {
+      "file": "data_pipeline/pipeline/utils/iou_tracker.py",
+      "line": 147,
+      "title": "Per Camera Tracker",
+      "description": "Routes the raw detections to a specific IoU tracker for the camera stream."
+    },
+    {
+      "file": "data_pipeline/pipeline/utils/iou_tracker.py",
+      "line": 51,
+      "title": "IoU Tracker Instance",
+      "description": "Performs greedy bounding box IoU intersection checks without Kalman filters for high speed logic."
+    },
+    {
+      "title": "Next Steps",
+      "description": "You can follow the enriched payload containing 'objects' as it publishes back to the MQTT tracked topic."
+    }
+  ]
+}

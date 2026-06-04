@@ -440,7 +440,7 @@ class TestSyncEngineIntegration:
 
         # Mock video reader
         mock_reader = MagicMock()
-        mock_reader.get_frame.return_value = (np.zeros((480, 640, 3), dtype=np.uint8), time.time())
+        mock_reader.get_closest_frame.return_value = (np.zeros((480, 640, 3), dtype=np.uint8), time.time())
 
         engine = SyncEngine(mock_reader, svc)
         frame, objects = await engine.get_synced_frame("cam1")
@@ -459,7 +459,7 @@ class TestSyncEngineIntegration:
         svc._running = True
 
         mock_reader = MagicMock()
-        mock_reader.get_frame.return_value = (np.zeros((480, 640, 3), dtype=np.uint8), time.time())
+        mock_reader.get_closest_frame.return_value = (np.zeros((480, 640, 3), dtype=np.uint8), time.time())
 
         engine = SyncEngine(mock_reader, svc)
         frame, objects = await engine.get_synced_frame("cam1")

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "C2 Center Backend Architecture",
+  "description": "Walkthrough of the c2_center backend API and the Sync Engine.",
+  "ref": "main",
+  "steps": [
+    {
+      "directory": "c2_center/backend/app",
+      "title": "Backend Root",
+      "description": "FastAPI backend handling configuration, syncing, and the UI APIs."
+    },
+    {
+      "file": "c2_center/backend/app/main.py",
+      "line": 15,
+      "title": "FastAPI Entry Point",
+      "description": "Bootstraps the FastAPI application and mounts the API routers."
+    },
+    {
+      "file": "c2_center/backend/app/runtime/sync_engine.py",
+      "line": 40,
+      "title": "Sync Engine",
+      "description": "Responsible for synchronizing incoming metadata (MQTT) with the video stream (RTSP)."
+    },
+    {
+      "file": "c2_center/backend/app/runtime/sync_engine.py",
+      "line": 105,
+      "title": "Synchronization Loop",
+      "description": "Pulls the latest frame and latest metadata to fuse them together, implementing the 'latest-to-latest' strategy."
+    },
+    {
+      "file": "c2_center/backend/app/pipelines/live_monitoring.py",
+      "line": 20,
+      "title": "Live Monitoring Pipeline",
+      "description": "Wires together the RTSP VideoReader, MQTT Consumer, and SyncEngine to build the live view pipeline."
+    },
+    {
+      "title": "Next Steps",
+      "description": "Review the video adapter implementations in `app/infrastructure/video` for deep dives into RTSP capture."
+    }
+  ]
+}
