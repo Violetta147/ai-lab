@@ -12,17 +12,25 @@ import time
 
 import numpy as np
 
-from app.core.config import settings
-from app.infrastructure.kafka.consumer import KafkaConsumerService
-from app.infrastructure.video.rtsp_reader import RtspVideoReader
+from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
+
+class VideoReaderProtocol(Protocol):
+    def get_closest_frame(self, stream_id: str, timestamp: float, max_latency: float = 1.0) -> tuple[Any, float] | None: ...
+    def get_stream_ids(self) -> list[str]: ...
+    def is_stream_connected(self, stream_id: str) -> bool: ...
+
+class MetadataReaderProtocol(Protocol):
+    async def pop_latest(self, stream_id: str) -> dict | None: ...
+    @property
+    def is_connected(self) -> bool: ...
 
 
 class SyncEngine:
     """
-    Synchronizes video frames from RtspVideoReader with JSON metadata
-    from KafkaConsumerService.
+    Synchronizes video frames from any VideoReaderProtocol with JSON metadata
+    from any MetadataReaderProtocol.
 
     For each stream, takes the latest video frame and finds the
     Kafka metadata message whose timestamp is closest (within tolerance).
@@ -30,11 +38,11 @@ class SyncEngine:
 
     def __init__(
         self,
-        video_reader: RtspVideoReader,
-        kafka_consumer: KafkaConsumerService,
+        video_reader: VideoReaderProtocol,
+        metadata_reader: MetadataReaderProtocol,
     ) -> None:
         self.video_reader = video_reader
-        self.kafka_consumer = kafka_consumer
+        self.metadata_reader = metadata_reader
         # Anti-flicker: store last valid detections per stream
         self._last_detections: dict[str, tuple[float, list[dict]]] = {}
         # TTL=0: disabled — Latest-to-Latest strategy means stale holds = ghost boxes
@@ -53,7 +61,7 @@ class SyncEngine:
         and retrieves the exact matching frame from the video reader's past buffer.
         """
         # 1. Grab the latest metadata FIRST
-        metadata = await self.kafka_consumer.pop_latest(stream_id)
+        metadata = await self.metadata_reader.pop_latest(stream_id)
         now = time.time()
         
         if not metadata:
@@ -120,5 +128,5 @@ class SyncEngine:
         return {
             "stream_id": stream_id,
             "video_connected": self.video_reader.is_stream_connected(stream_id),
-            "kafka_connected": self.kafka_consumer.is_connected,
+            "metadata_connected": getattr(self.metadata_reader, "is_connected", True),
         }
