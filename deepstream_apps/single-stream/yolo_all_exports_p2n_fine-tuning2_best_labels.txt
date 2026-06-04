@@ -1,3 +1,0 @@
-car
-motor
-heavy_vehicle
