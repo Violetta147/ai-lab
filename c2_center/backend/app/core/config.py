@@ -25,6 +25,18 @@ class Settings(BaseSettings):
     KAFKA_TOPIC: str = "c2_metadata"
     KAFKA_GROUP_ID: str = "c2_backend"
 
+    # --- Metadata source ---
+    # "kafka" = DeepStream via Kafka (default)
+    # "mqtt"  = data_pipeline tracking bridge via MQTT
+    METADATA_SOURCE: str = "kafka"
+
+    # --- MQTT consumer (active when METADATA_SOURCE=mqtt) ---
+    MQTT_BROKER: str = "127.0.0.1"
+    MQTT_PORT: int = 1883
+    MQTT_TOPIC: str = "traffic/tracked"
+    MQTT_QOS: int = 1
+    MQTT_CLIENT_ID: str = "c2_center_mqtt"
+
     # --- Models ---
     # Backend scans this directory for model subdirectories.
     # Each subdirectory must contain: weights file (.pt or .onnx) + labels.txt

@@ -2,6 +2,8 @@
 
 from fastapi import APIRouter
 
+from app.core.config import settings
+
 router = APIRouter(prefix="/api", tags=["streams"])
 
 
@@ -17,7 +19,13 @@ def get_router(sync_engine, kafka_consumer=None):
                 kafka_connected = bool(kafka_consumer.is_connected)
             except Exception:
                 kafka_connected = False
-        return {"status": "ok", "streams": streams, "kafka_connected": kafka_connected}
+        return {
+            "status": "ok",
+            "streams": streams,
+            "kafka_connected": kafka_connected,  # backward compat
+            "metadata_connected": kafka_connected,  # generic alias
+            "metadata_source": settings.METADATA_SOURCE,
+        }
 
     @router.get("/streams")
     async def list_streams():

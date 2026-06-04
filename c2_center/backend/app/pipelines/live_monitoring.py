@@ -13,6 +13,7 @@ import logging
 from dataclasses import dataclass
 
 from app.analytics.registry import AnalyticsRegistry
+from app.core.config import settings
 from app.infrastructure.database.camera_repository import CameraRepository
 from app.infrastructure.database.zone_repository import ZoneRepository
 from app.infrastructure.kafka.consumer import KafkaConsumerService
@@ -115,7 +116,11 @@ class LivePipelineHandle:
 
         if zone_data:
             self.zone_repo.set(stream_id, zone_data)
-            logger.info("[%s] Seeded zone_repo from stream_profiles: %s", stream_id, list(zone_data.keys()))
+            logger.info(
+                "[%s] Seeded zone_repo from stream_profiles: %s",
+                stream_id,
+                list(zone_data.keys()),
+            )
 
     def remove_stream(self, stream_id: str) -> bool:
         """Tear down a single stream end-to-end."""
@@ -134,7 +139,23 @@ def wire_live_pipeline(
 ) -> LivePipelineHandle:
     """Construct and connect the full live monitoring pipeline."""
     video_reader = RtspVideoReader()
-    kafka_consumer = KafkaConsumerService()
+    if settings.METADATA_SOURCE == "mqtt":
+        from app.infrastructure.mqtt.consumer import MqttDetectionConsumerService
+
+        kafka_consumer = MqttDetectionConsumerService()
+        logger.info(
+            "Metadata source: MQTT (%s:%d topic=%s)",
+            settings.MQTT_BROKER,
+            settings.MQTT_PORT,
+            settings.MQTT_TOPIC,
+        )
+    else:
+        kafka_consumer = KafkaConsumerService()
+        logger.info(
+            "Metadata source: Kafka (%s topic=%s)",
+            settings.KAFKA_BOOTSTRAP,
+            settings.KAFKA_TOPIC,
+        )
     sync_engine = SyncEngine(video_reader, kafka_consumer)
 
     dispatcher = AnalyticsDispatcher(registry)

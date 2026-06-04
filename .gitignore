@@ -98,3 +98,6 @@ node_modules/
 # VS Code workspace settings (optional - uncomment if you want to exclude)
 # .vscode/settings.json
 # .vscode/launch.json
+
+# Subrepositories — tracked independently
+data_pipeline/
