@@ -23,11 +23,6 @@
 
 ---
 
-## Các Điểm Can Thiệp ĐÃ LOẠI BỎ (Điểm ②, ③, ④)
-- **Can thiệp trong hoặc sau bộ lọc AL/OOD**: Bị loại bỏ vì bộ lọc sẽ loại bỏ ~95% frame bình thường. Nếu lấy dữ liệu ở đây, Web Server sẽ bị "đóng băng" giao diện vì dữ liệu quá thưa thớt, đồng thời IoU Tracker sẽ mất dấu xe hoàn toàn (do khoảng cách dịch chuyển xe quá lớn giữa 2 lần gửi).
-
----
-
 ## Khuyến Nghị Lộ Trình Triển Khai (Roadmap) Cho Luồng Live
 
 ### 🚀 Bước 1: Triển khai luồng Live Telemetry & Live Video (Ngắn hạn)
