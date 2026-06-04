@@ -104,7 +104,7 @@ Open your browser and navigate to `http://localhost:5173`.
 
 If you have the physical Jetson Nano hardware:
 1. Connect to the Jetson Nano via SSH.
-2. Deploy the `c2_center/deepstream` folder to the device.
+2. Deploy the `deepstream` folder to the device.
 3. Start the DeepStream pipeline to begin publishing bounding boxes to your MQTT broker (`192.168.1.50:1883`).
 
 ### 🧪 6.1 Simulating Edge Data (No Hardware Needed)
