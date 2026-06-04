@@ -6,7 +6,7 @@ The system consists of three main parts:
 1. **Infrastructure**: MQTT Broker, PostgreSQL, Redis, MinIO.
 2. **C2 Center**: FastAPI Backend & React Frontend for live video streaming and camera management.
 3. **Data Pipeline**: Celery workers & MQTT listeners for background tracking and CVAT integration.
-4. **Edge AI**: Jetson Nano running DeepStream (YOLOv8) pushing detections.
+4. **Edge AI**: Jetson Nano running YOLOv8 (via `edge_server`) pushing detections.
 
 ---
 
@@ -104,8 +104,8 @@ Open your browser and navigate to `http://localhost:5173`.
 
 If you have the physical Jetson Nano hardware:
 1. Connect to the Jetson Nano via SSH.
-2. Deploy the `deepstream` folder to the device.
-3. Start the DeepStream pipeline to begin publishing bounding boxes to your MQTT broker (`192.168.1.50:1883`).
+2. Deploy the `edge_server` folder to the device.
+3. Start the edge server script (e.g. `python main.py`) to begin publishing bounding boxes to your MQTT broker (`192.168.1.50:1883`).
 
 ### 🧪 6.1 Simulating Edge Data (No Hardware Needed)
 If you just want to see data flowing without a Jetson Nano, you can use our built-in tests to mock MQTT data:
