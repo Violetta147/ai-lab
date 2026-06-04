@@ -93,55 +93,63 @@ Lúc này, cơ chế an toàn phần cứng của Jetson sẽ tự động hạ 
 
 ## IV. Phân Tích Cơ Chế Đa Luồng (Multi-threading) Trên Jetson Nano
 
-Để hiểu tại sao cần đa luồng và **đa luồng thực sự xử lý cái gì**, chúng ta cần so sánh luồng công việc giữa kiến trúc đơn luồng tuần tự và đa luồng bất đồng bộ.
-
-### 1. Pipeline Đơn Luồng (Single-Thread) Bị Nghẽn Bởi Tác Vụ I/O & CPU Nén Ảnh
-Trong thiết kế đơn luồng, Jetson Nano xử lý tuần tự từng bước cho mỗi khung hình (Frame):
-```text
-[Đọc Frame] ──> [Inference YOLO] ──> [Bộ Lọc] ──> [Nén JPEG] ──> [Upload MinIO (Mạng)] ──> [Gửi MQTT (Mạng)]
-  (5 ms)           (25 ms)            (2 ms)        (3 ms)           (5 ms - Chờ phản hồi)       (5 ms - Chờ PUBACK)
-```
-- **Vấn đề**: Trong thời gian Jetson Nano nén JPEG (tốn CPU) và tải ảnh lên MinIO hoặc chờ phản hồi xác nhận gửi từ MQTT (tốn I/O mạng), **luồng chính bị đóng băng (Blocked)**. Camera vẫn tiếp tục truyền frame mới nhưng Jetson không thể đọc, dẫn đến việc rớt khung hình (Frame Drop) và FPS thực tế bị giảm xuống dưới 15 FPS.
-
----
-
-### 2. Pipeline Đa Luồng Chia Tách Trách Nhiệm (Multi-threaded Pipeline)
-Chúng ta chia nhỏ hệ thống thành hai luồng chạy song song độc lập, giao tiếp với nhau qua một hàng đợi RAM (**Thread-safe Queue**):
+### 1. Thiết Kế Hệ Thống Đa Luồng Với Đệm Cục Bộ (3-Thread Local Buffer Architecture)
+Để giải quyết triệt để nguy cơ hệ thống bị treo hoặc sụt giảm FPS khi xảy ra nghẽn mạng/mất mạng, chúng ta cấu trúc chương trình thành 3 luồng chạy song song hoàn toàn độc lập:
 
 ```text
-LUỒNG CHÍNH (Inference Thread) - Chạy ở tốc độ tối đa (23 FPS)
-[Đọc Frame] ──> [Inference YOLO] ──> [Gửi MQTT Tọa Độ Nhẹ] ──> [Đẩy Frame + Metadata vào Queue RAM]
-                                                                        │
-                                                                        ▼
-                                                             [ Hàng Đợi (Queue RAM) ]
-                                                                        │
-                                                                        ▼
-LUỒNG PHỤ (Worker / I/O Thread) - Chạy ngầm (Background)
-                                            [Lấy từ Queue] ──> [Nén JPEG] ──> [Upload MinIO]
+ ┌────────────────────────────────────────────────────────┐
+ │ 1. LUỒNG CHÍNH (Main / Inference Thread)                │  <-- Giữ FPS tối đa (~23 FPS)
+ │    [Đọc Frame] ──> [Inference YOLO] ──> [Chạy Bộ Lọc]  │
+ └──────────────────────────┬─────────────────────────────┘
+                            │ (Chỉ khi Active Learning kích hoạt)
+                            ▼
+                 [ Hàng Đợi RAM (Queue) ] (maxsize = 10)
+                            │
+                            ▼
+ ┌────────────────────────────────────────────────────────┐
+ │ 2. LUỒNG GHI ĐĨA (Local Disk Writer Thread)            │  <-- Không phụ thuộc vào mạng
+ │    [Nén JPEG] ──> [Ghi File JPEG & JSON ra .\buffer]   │
+ └──────────────────────────┬─────────────────────────────┘
+                            │ (Lưu trữ an toàn trên Jetson SD/SSD)
+                            ▼
+                  [ Thư mục .\buffer ]
+                            │
+                            ▼ (Quét đồng bộ ngầm khi có mạng)
+ ┌────────────────────────────────────────────────────────┐
+ │ 3. LUỒNG ĐỒNG BỘ (Background Sync Thread)              │  <-- Xử lý bất đồng bộ
+ │    [Đọc file] ──> [Upload MinIO] ──> [Gửi MQTT] ──> [Xóa]│
+ └────────────────────────────────────────────────────────┘
 ```
 
-#### A. Luồng chính (Inference Thread) xử lý những gì?
-- **Nhiệm vụ**: Chỉ làm các tác vụ cực kỳ nhanh để giữ FPS cao nhất:
-  1. Đọc frame từ RTSP.
+#### A. Luồng chính (Inference Thread) - Đảm bảo hiệu năng thời gian thực
+- **Nhiệm vụ**: Chỉ làm các tác vụ tính toán cực kỳ nhanh để giữ FPS cao nhất:
+  1. Đọc frame từ nguồn RTSP giả lập.
   2. Inference mô hình YOLOv8n TensorRT trên GPU.
-  3. Gửi tin nhắn MQTT thô siêu nhẹ (chỉ chứa tọa độ JSON, không kèm ảnh) sang Laptop để Laptop vẽ bounding box ngay lập tức lên giao diện monitor.
-  4. Nếu bộ lọc Active Learning kích hoạt (cần lưu ảnh khó): Copy khung hình trên RAM và đẩy vào Queue.
-- **Thời gian xử lý**: Chỉ tốn thời gian đọc frame và inference $\implies$ không bao giờ bị block bởi I/O mạng, giúp duy trì tốc độ ổn định ở mức tối đa 23 FPS.
+  3. Kiểm tra các bộ lọc Active Learning và Rule OOD.
+  4. Nếu có phát hiện cần lưu: Copy khung hình trên RAM và đẩy phi chặn (non-blocking) vào Hàng Đợi RAM (`Queue`).
+  5. Gửi telemetry realtime siêu nhẹ (chỉ chứa tọa độ JSON, không kèm ảnh) qua MQTT lên Laptop.
+- **Cơ chế chống block**: MQTT client trên luồng này được khởi chạy bằng vòng lặp bất đồng bộ (`loop_start()`) và gửi tin nhắn với mức `QoS = 0`. Khi mạng bị nghẽn hoặc mất kết nối, lệnh publish sẽ trả về ngay lập tức chứ không chặn luồng chính.
 
-#### B. Luồng phụ (Worker / I/O Thread) xử lý những gì?
-- **Nhiệm vụ**: Chuyên xử lý các tác vụ nặng, chậm và dễ bị nghẽn mạng:
-  1. Lắng nghe và lấy ảnh từ Queue RAM khi Luồng chính đẩy vào.
-  2. Nén ảnh sang JPEG (`cv2.imencode`).
-  3. Kết nối mạng cục bộ để tải ảnh JPEG lên MinIO Server.
-  4. Sau khi tải ảnh thành công, cập nhật trạng thái hoặc gửi link ảnh lên Server để lưu trữ MLOps.
-- **Ý nghĩa**: Dù mạng Wi-Fi cục bộ có bị chập chờn hay MinIO phản hồi chậm (tốn 100ms), luồng chính vẫn chạy mượt ở 23 FPS. Chỉ có ảnh lưu trữ trên MinIO bị trễ nhẹ vài mili-giây, hoàn toàn không ảnh hưởng đến trải nghiệm người xem.
+#### B. Luồng ghi đĩa (Local Disk Writer Thread) - Tránh nghẽn hàng đợi RAM
+- **Nhiệm vụ**: Giải phóng hàng đợi RAM nhanh nhất có thể bằng cách làm việc hoàn toàn với lưu trữ cục bộ:
+  1. Lắng nghe và lấy các phần tử (Frame + Metadata thô) từ RAM Queue.
+  2. Nén frame sang JPEG (`cv2.imencode`) bằng CPU.
+  3. Ghi trực tiếp file ảnh JPEG và file metadata JSON tương ứng vào thư mục cục bộ `.\buffer` trên Jetson.
+- **Ý nghĩa**: Vì ghi trực tiếp lên bộ nhớ SSD/thẻ nhớ của Jetson cực kỳ nhanh và không phụ thuộc vào trạng thái mạng, hàng đợi RAM sẽ được giải phóng ngay lập tức. Ngay cả khi mất mạng hoàn toàn, RAM Queue không bao giờ bị đầy hay block ngược lại luồng chính.
 
-#### C. Giải phóng GIL (Global Interpreter Lock) trong Python 3.8
-Mặc dù Python có cơ chế GIL (chỉ cho phép 1 luồng CPU chạy mã Python tại một thời điểm), đa luồng ở đây vẫn hoạt động rất hiệu quả vì:
+#### C. Luồng đồng bộ ngầm (Background Sync Thread) - Đồng bộ dữ liệu bất đồng bộ
+- **Nhiệm vụ**: Tự động đồng bộ các file trong thư mục `.\buffer` lên Server khi có mạng:
+  1. Chạy ngầm theo chu kỳ định kỳ (ví dụ mỗi 2 - 5 giây).
+  2. Quét thư mục `.\buffer`. Nếu phát hiện file chưa đồng bộ, tiến hành upload ảnh lên MinIO và gửi JSON lên MQTT.
+  3. Sau khi upload và gửi thành công, tiến hành xóa các file local tương ứng.
+- **Cơ chế tự phục hồi**: Nếu gặp lỗi kết nối (mất mạng, MinIO/MQTT Server không phản hồi), luồng này sẽ ghi nhận lỗi, sleep lâu hơn (ví dụ 5-10 giây) và bỏ qua chu kỳ hiện tại. Dữ liệu vẫn được giữ an toàn tại local và sẽ được đồng bộ lại ở chu kỳ tiếp theo khi mạng ổn định.
+
+#### D. Giải phóng GIL (Global Interpreter Lock) trong Python 3.8
+Mặc dù Python có cơ chế GIL (chỉ cho phép 1 luồng CPU chạy mã Python tại một thời điểm), kiến trúc 3 luồng này hoạt động cực kỳ hiệu quả trên Jetson Nano (4 nhân CPU) vì:
 - Khi chạy nhận diện YOLO (gọi thư viện C++/TensorRT trên GPU), Python sẽ **nhả GIL**.
 - Khi OpenCV nén JPEG (`cv2.imencode` chạy bằng thư viện C++ tối ưu), Python cũng **nhả GIL**.
-- Khi luồng phụ thực hiện gửi nhận dữ liệu qua Socket mạng (đợi MinIO upload), Python tiếp tục **nhả GIL**.
-- Do đó, hai luồng này có thể chạy song song thực tế trên các nhân CPU khác nhau của Jetson Nano mà không bị GIL cản trở.
+- Khi luồng ghi đĩa thực hiện I/O ghi file và luồng đồng bộ thực hiện I/O mạng (MinIO/MQTT), Python tiếp tục **nhả GIL**.
+- Do đó, các tác vụ này có thể song song hóa thực tế trên nhiều nhân CPU khác nhau.
 
 ---
 
@@ -176,8 +184,12 @@ Vì hệ thống **không sử dụng Swap**, việc quản lý bộ nhớ RAM v
    ```
    *(Để bật lại GUI khi cần: `sudo systemctl set-default graphical.target`)*.
 2. **Cấu hình hàng đợi RAM Queue cực kỳ chặt chẽ (`maxsize = 10` hoặc `15`)**:
-   - Tuyệt đối không để `maxsize` quá lớn (ví dụ 100 hay 150). Nếu mạng bị mất kết nối tạm thời, hàng đợi tích lũy quá nhiều frame ảnh thô sẽ làm cạn kiệt RAM rất nhanh.
-   - Khi Queue bị đầy (`maxsize=10`), luồng chính sẽ tạm thời block việc đẩy ảnh khó mới vào Queue (chỉ tiếp tục gửi MQTT metadata nhẹ) để tự bảo vệ RAM.
+   - Mặc dù Luồng ghi đĩa cục bộ dọn hàng đợi cực nhanh, việc giới hạn `maxsize` ở mức thấp là bắt buộc để ngăn chặn tích tụ RAM trong trường hợp tốc độ ghi đĩa gặp sự cố phần cứng đột xuất.
+   - Khi Queue bị đầy (`maxsize=10`), luồng chính sẽ tạm thời bỏ qua (drop) việc đẩy ảnh mới vào Queue để bảo vệ an toàn cho dung lượng RAM (tránh OOM Killer).
+
+3. **Cơ chế bảo vệ dung lượng đĩa đệm cục bộ (Local Disk Safety Limit)**:
+   - Trong trường hợp mất mạng kéo dài, thư mục `.\buffer` sẽ liên tục tích lũy file và có nguy cơ làm đầy ổ đĩa của Jetson.
+   - Cần triển khai cơ chế kiểm tra dung lượng thư mục `.\buffer` định kỳ (ví dụ: tối đa 500MB hoặc 1GB). Khi vượt quá giới hạn an toàn này, hệ thống sẽ tạm thời ngừng ghi file mới vào đĩa cho đến khi kết nối mạng được khôi phục và luồng đồng bộ dọn bớt thư mục đệm.
 3. **Giải phóng RAM chủ động trong code Python**:
    - Sau khi luồng phụ lấy ảnh từ Queue và nén xong, hoặc gửi xong, hãy sử dụng từ khóa `del` để giải phóng biến và gọi `gc.collect()` định kỳ để Python dọn dẹp RAM ngay lập tức.
      ```python
