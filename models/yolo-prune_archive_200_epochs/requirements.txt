@@ -1,4 +1,0 @@
-ultralytics==8.4.13
-torch_pruning
-pyyaml
-torch

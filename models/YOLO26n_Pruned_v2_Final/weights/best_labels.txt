@@ -1,4 +1,0 @@
-bus
-car
-motor
-truck

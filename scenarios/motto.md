@@ -1,1 +1,0 @@
-No overengineering. * Clean, readable code. * Minimal, meaningful comments only. * Focus on the core logic, not defensive edge-case bloat
