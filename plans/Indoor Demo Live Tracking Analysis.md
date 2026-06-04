@@ -1,9 +1,9 @@
 # Phân Tích Hiệu Năng Live Tracking Trong Môi Trường Lab (Luồng Video Giao Thông Giả Lập Qua FFMPEG)
 
 > **Bối Cảnh & Thiết Lập Demo**:
-> - **Nguồn Video**: Sử dụng ffmpeg để stream liên tục một file video giao thông thực tế lên MediaMTX để giả lập luồng camera RTSP.
-> - **Độ Phân Giải Thực Tế**: Video được scale về **640x640 pixels** (theo cấu hình tham số `-vf scale=640:640` của lệnh ffmpeg và `width=640, height=640` của DeepStream/YOLO).
-> - **Đối Tượng**: Các phương tiện giao thông (ô tô, xe máy, xe buýt) di chuyển với tốc độ giả lập 60 km/h.
+> - **Nguồn Video**: Sử dụng USB Camera kết nối trực tiếp vào Jetson Nano (hoặc đọc file video bằng OpenCV) mà không thông qua MediaMTX (RTSP Server đã bị loại bỏ).
+> - **Độ Phân Giải Thực Tế**: Video được xử lý ở **640x640 pixels**.
+> - **Đối Tượng**: Các phương tiện giao thông di chuyển với tốc độ khoảng 60 km/h.
 > - **Hạ Tầng**: Thiết bị Jetson Nano 4GB (GPU Maxwell 128 nhân, CPU 4 nhân ARM A57) kết nối với Laptop thông qua mạng Wi-Fi nội bộ hoặc bộ phát Wi-Fi 4G cầm tay trong nhà.
 > - **Trạng thái Phần Cứng**: Đã được thiết lập chạy ở **chế độ nguồn tối đa (10W MAXN)** và **khóa xung nhịp cao nhất (overclocked via jetson_clocks)**.
 > - **Bộ Nhớ Ảo (Swap)**: **Không sử dụng Swap** (hệ thống chỉ chạy hoàn toàn trên 4GB RAM vật lý).
@@ -126,8 +126,8 @@ Lúc này, cơ chế an toàn phần cứng của Jetson sẽ tự động hạ 
   1. Đọc frame từ nguồn RTSP giả lập.
   2. Inference mô hình YOLOv8n TensorRT trên GPU.
   3. Kiểm tra các bộ lọc Active Learning và Rule OOD.
-  4. Nếu có phát hiện cần lưu: Copy khung hình trên RAM và đẩy phi chặn (non-blocking) vào Hàng Đợi RAM (`Queue`).
-  5. Gửi telemetry realtime siêu nhẹ (chỉ chứa tọa độ JSON, không kèm ảnh) qua MQTT lên Laptop.
+  4. Nếu có phát hiện (ảnh khó/MLOps): Copy khung hình trên RAM và đẩy phi chặn (non-blocking) vào Hàng Đợi RAM (`Queue`).
+  5. Gửi trực tiếp khung hình ảnh nén (JPEG) và telemetry (JSON tọa độ) qua MQTT lên Web Server ở tần số cao.
 - **Cơ chế chống block**: MQTT client trên luồng này được khởi chạy bằng vòng lặp bất đồng bộ (`loop_start()`) và gửi tin nhắn với mức `QoS = 0`. Khi mạng bị nghẽn hoặc mất kết nối, lệnh publish sẽ trả về ngay lập tức chứ không chặn luồng chính.
 
 #### B. Luồng ghi đĩa (Local Disk Writer Thread) - Tránh nghẽn hàng đợi RAM
