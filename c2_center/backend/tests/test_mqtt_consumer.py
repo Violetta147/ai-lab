@@ -21,13 +21,15 @@ def make_msg(payload: dict, topic: str = "traffic/tracked"):
 
 def make_consumer():
     """Instantiate without triggering paho I/O."""
-    with patch("app.infrastructure.mqtt.consumer.mqtt_client"):
-        from app.infrastructure.mqtt.consumer import MqttDetectionConsumerService
+    import threading
+    from unittest.mock import patch as _patch
 
-        svc = MqttDetectionConsumerService.__new__(MqttDetectionConsumerService)
-        # Manually initialise internal state (bypass __init__ paho calls)
-        import threading
+    import app.infrastructure.mqtt.consumer as _mod  # import first so patch can resolve
 
+    with _patch.object(_mod, "mqtt_client"):
+        svc = _mod.MqttDetectionConsumerService.__new__(
+            _mod.MqttDetectionConsumerService
+        )
         svc._ready = {}
         svc._lock = threading.Lock()
         svc._running = False
