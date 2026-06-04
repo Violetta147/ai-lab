@@ -59,31 +59,22 @@ Vì độ phân giải chỉ là 640x640, dung lượng ảnh nén JPEG sẽ gi�
 
 **Đánh giá khả năng đáp ứng:**
 - **Mạng Wi-Fi nội bộ (5GHz)**: Cực kỳ nhẹ nhàng. Băng thông **5.3 Mbps** chỉ chiếm khoảng **2%** năng lực của đường truyền Wi-Fi trong nhà.
-- **Ý nghĩa**: Với độ phân giải 640x640, bạn có thể truyền liên tục cả ảnh lẫn metadata ở tốc độ 25 FPS mà không gặp bất kỳ trở ngại nào về băng thông mạng cục bộ.
+- **Ý nghĩa**: Với độ phân giải 640x640, bạn có thể truyền liên tục cả ảnh lẫn metadata ở tốc độ 23-25 FPS thực tế mà không gặp bất kỳ trở ngại nào về băng thông mạng cục bộ.
 
 ---
 
-## III. Sức Nặng Của Python 3.8 Và Rủi Ro Quá Nhiệt (Thermal Throttling)
+## III. Sức Nặng Hệ Thống Và Rủi Ro Quá Nhiệt (Thermal Throttling)
 
 Do bạn đã **kích hoạt chế độ nguồn tối đa 10W (MAXN)** và **khóa xung nhịp cao nhất (jetson_clocks)**, hiệu năng cơ sở của hệ thống ban đầu sẽ đạt mức tối đa. Tuy nhiên, khi **tạm thời không tính tới hiệu quả của quạt tản nhiệt**, rủi ro quá nhiệt (Thermal Throttling) sẽ xảy ra rất nhanh khi chạy liên tục.
 
-### 1. Hiệu Năng Đỉnh Ban Đầu (Khi Chip Còn Mát < 70°C)
+### 1. Hiệu Năng Thực Tế Ban Đầu (Khi Chip Còn Mát < 70°C)
 
-Khi mới khởi động và chip chưa bị nóng, xung nhịp CPU được giữ ở mức 1.43 GHz và GPU ở 921 MHz:
-- **YOLOv8n Inference (TensorRT FP16)**: Đạt ổn định **~25 ms**.
-- **Đọc khung hình và tiền xử lý OpenCV**: **~5 ms**.
-- **Nén JPEG CPU và JSON Serialization (Python 3.8)**: **~5 ms**.
-- **Thời gian block I/O truyền tin mạng LAN**: **~8 ms**.
-
-**Đánh giá tốc độ xử lý ban đầu:**
-*   **Ở chế độ Đơn luồng tuần tự**: Tổng thời gian xử lý 1 frame là $5 + 25 + 5 + 8 = \mathbf{43\text{ ms}} \implies$ Đạt tốc độ **~23 FPS** (khá mượt).
-*   **Ở chế độ Đa luồng bất đồng bộ (Async Threaded Worker)**: Giải phóng thời gian block I/O của luồng chính $\implies T_{\text{main}} = 5\text{ms (Đọc)} + 25\text{ms (AI)} + 5\text{ms (MQTT)} = \mathbf{35\text{ ms}} \implies$ Đạt tối đa **28.5 FPS**.
-
----
+*   **Hiệu năng trần thực tế (Practical Ceiling)**: Khi chạy pipeline thực tế (ví dụ: DeepStream hoặc OpenCV tuần tự kết hợp I/O), hiệu năng tối đa đạt được trên Jetson Nano là **~23 FPS** (tương đương ~43 ms cho mỗi khung hình).
+*   **Nguyên nhân giới hạn ở 23 FPS**: Mặc dù thời gian chạy mô hình TensorRT FP16 chỉ mất ~25 ms, việc giải mã video (Video Decoding), chuyển đổi hệ màu, co giãn kích thước ảnh (resizing) cùng với chi phí đồng bộ hóa bộ nhớ giữa CPU và GPU (Unified Memory Bus overhead) đã tiêu tốn thêm ít nhất 15-18 ms, giới hạn tần số xử lý tối đa ở 23 FPS ngay cả khi đã bất đồng bộ hóa hoàn toàn I/O mạng.
 
 ### 2. Sự Suy Giảm Hiệu Năng Thực Tế Do Quá Nhiệt (Không Có Quạt Chủ Động)
 
-Khi chạy nhận dạng liên tục 23 - 28 FPS, GPU và CPU của Jetson Nano hoạt động gần hết công suất. Không có quạt tản nhiệt, nhiệt độ chip sẽ nhanh chóng vượt qua ngưỡng **75°C** chỉ sau **3 - 5 phút** hoạt động.
+Khi chạy nhận dạng liên tục ở mức trần 23 FPS, GPU và CPU của Jetson Nano hoạt động gần hết công suất. Không có quạt tản nhiệt, nhiệt độ chip sẽ nhanh chóng vượt qua ngưỡng **75°C** chỉ sau **3 - 5 phút** hoạt động.
 
 Lúc này, cơ chế an toàn phần cứng của Jetson sẽ tự động hạ xung nhịp CPU và GPU xuống mức thấp nhất để tự làm mát. Hiệu năng thực tế sẽ bị kéo sụt nghiêm trọng:
 
@@ -94,7 +85,7 @@ Lúc này, cơ chế an toàn phần cứng của Jetson sẽ tự động hạ 
 | **Nén JPEG CPU & JSON Serialize** | ~5 ms | **~15 ms** (Xung CPU bị giảm) |
 | **Thời gian block I/O (MinIO + MQTT)** | ~8 ms | **~15 ms** |
 | **Tổng thời gian xử lý 1 frame** | **~43 ms** | **~92 - 107 ms** |
-| **FPS thực tế đạt được** | **~23.2 FPS** | **~9.3 - 10.8 FPS** |
+| **FPS thực tế đạt được** | **~23.0 FPS (Giới hạn thực tế)** | **~9.3 - 10.8 FPS** |
 
 *   **Hậu quả**: Khi không có quạt tản nhiệt chủ động bảo vệ, sau vài phút chạy thử, FPS của bản demo sẽ tự động tụt sâu xuống **dưới 10 FPS**. Ở tốc độ này, monitor hiển thị box trên Laptop sẽ bị giật lắc nghiêm trọng, và bộ tracker bắt đầu mất dấu xe liên tục (nhảy ID).
 
@@ -110,7 +101,7 @@ Trong thiết kế đơn luồng, Jetson Nano xử lý tuần tự từng bướ
 [Đọc Frame] ──> [Inference YOLO] ──> [Bộ Lọc] ──> [Nén JPEG] ──> [Upload MinIO (Mạng)] ──> [Gửi MQTT (Mạng)]
   (5 ms)           (25 ms)            (2 ms)        (3 ms)           (5 ms - Chờ phản hồi)       (5 ms - Chờ PUBACK)
 ```
-- **Vấn đề**: Trong thời gian Jetson Nano nén JPEG (tốn CPU) và tải ảnh lên MinIO hoặc chờ phản hồi xác nhận gửi từ MQTT (tốn I/O mạng), **luồng chính bị đóng băng (Blocked)**. Camera vẫn tiếp tục truyền frame mới nhưng Jetson không thể đọc, dẫn đến việc rớt khung hình (Frame Drop) và FPS thực tế bị giảm xuống còn 15-23 FPS.
+- **Vấn đề**: Trong thời gian Jetson Nano nén JPEG (tốn CPU) và tải ảnh lên MinIO hoặc chờ phản hồi xác nhận gửi từ MQTT (tốn I/O mạng), **luồng chính bị đóng băng (Blocked)**. Camera vẫn tiếp tục truyền frame mới nhưng Jetson không thể đọc, dẫn đến việc rớt khung hình (Frame Drop) và FPS thực tế bị giảm xuống dưới 15 FPS.
 
 ---
 
@@ -118,7 +109,7 @@ Trong thiết kế đơn luồng, Jetson Nano xử lý tuần tự từng bướ
 Chúng ta chia nhỏ hệ thống thành hai luồng chạy song song độc lập, giao tiếp với nhau qua một hàng đợi RAM (**Thread-safe Queue**):
 
 ```text
-LUỒNG CHÍNH (Inference Thread) - Chạy ở tốc độ tối đa (25-30 FPS)
+LUỒNG CHÍNH (Inference Thread) - Chạy ở tốc độ tối đa (23 FPS)
 [Đọc Frame] ──> [Inference YOLO] ──> [Gửi MQTT Tọa Độ Nhẹ] ──> [Đẩy Frame + Metadata vào Queue RAM]
                                                                         │
                                                                         ▼
@@ -135,7 +126,7 @@ LUỒNG PHỤ (Worker / I/O Thread) - Chạy ngầm (Background)
   2. Inference mô hình YOLOv8n TensorRT trên GPU.
   3. Gửi tin nhắn MQTT thô siêu nhẹ (chỉ chứa tọa độ JSON, không kèm ảnh) sang Laptop để Laptop vẽ bounding box ngay lập tức lên giao diện monitor.
   4. Nếu bộ lọc Active Learning kích hoạt (cần lưu ảnh khó): Copy khung hình trên RAM và đẩy vào Queue.
-- **Thời gian xử lý**: Chỉ tốn khoảng **30 - 35ms** $\implies$ Không bao giờ bị block, đảm bảo luồng Live Tracking trên Laptop hiển thị mượt mà liên tục ở 25-30 FPS.
+- **Thời gian xử lý**: Chỉ tốn thời gian đọc frame và inference $\implies$ không bao giờ bị block bởi I/O mạng, giúp duy trì tốc độ ổn định ở mức tối đa 23 FPS.
 
 #### B. Luồng phụ (Worker / I/O Thread) xử lý những gì?
 - **Nhiệm vụ**: Chuyên xử lý các tác vụ nặng, chậm và dễ bị nghẽn mạng:
@@ -143,7 +134,7 @@ LUỒNG PHỤ (Worker / I/O Thread) - Chạy ngầm (Background)
   2. Nén ảnh sang JPEG (`cv2.imencode`).
   3. Kết nối mạng cục bộ để tải ảnh JPEG lên MinIO Server.
   4. Sau khi tải ảnh thành công, cập nhật trạng thái hoặc gửi link ảnh lên Server để lưu trữ MLOps.
-- **Ý nghĩa**: Dù mạng Wi-Fi cục bộ có bị chập chờn hay MinIO phản hồi chậm (tốn 100ms), luồng chính vẫn chạy mượt ở 30 FPS. Chỉ có ảnh lưu trữ trên MinIO bị trễ nhẹ vài mili-giây, hoàn toàn không ảnh hưởng đến trải nghiệm người xem.
+- **Ý nghĩa**: Dù mạng Wi-Fi cục bộ có bị chập chờn hay MinIO phản hồi chậm (tốn 100ms), luồng chính vẫn chạy mượt ở 23 FPS. Chỉ có ảnh lưu trữ trên MinIO bị trễ nhẹ vài mili-giây, hoàn toàn không ảnh hưởng đến trải nghiệm người xem.
 
 #### C. Giải phóng GIL (Global Interpreter Lock) trong Python 3.8
 Mặc dù Python có cơ chế GIL (chỉ cho phép 1 luồng CPU chạy mã Python tại một thời điểm), đa luồng ở đây vẫn hoạt động rất hiệu quả vì:
