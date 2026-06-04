@@ -1,21 +1,22 @@
-<!-- Generated: 2026-06-05 | Files scanned: ~50 | Token estimate: ~300 -->
-# Project Architecture
+<!-- Generated: 2026-06-05 | Files scanned: ~40 | Token estimate: ~500 -->
+# C++ Edge Server Architecture
 
-## High-Level Flow
-Edge Server (Jetson Nano) → MQTT / MinIO → C2 Center (Backend)
+## High-Level Data Flow
+Camera/Video → YOLO TensorRT Engine → Filters (OOD/AL) → RAM Queue → Disk Buffer → Cloud Sync (MinIO/MQTT)
 
-## Key Components
+## Core Components
+- **Inference (`src/infer/`)**: CUDA/TensorRT based YOLOv8 inference and ByteTrack object tracking.
+- **Filters (`src/filters/`)**: Logic to detect anomalies, out-of-distribution events, and trigger Active Learning data collection.
+- **Core Orchestration (`src/core/`)**: Thread-safe queues, disk writers, and background sync loops.
+- **Clients (`src/clients/`)**: MQTT and MinIO wrappers for cloud communication.
 
-### 1. Edge Server (`edge_server/`)
-- **Main Loop** (`inference.py`): Runs YOLO detection, pushes lightweight JSON telemtry to `traffic/live_tracking` and video to `traffic/live_video` via MQTT.
-- **Disk Writer** (`threads.py`): Background thread writing raw frames to `./buffer` while protecting the 500MB local disk limit.
-- **Background Sync** (`threads.py`): Periodically uploads buffered data to MinIO.
-
-### 2. C2 Center Backend (`c2_center/backend/app/`)
-- **SyncEngine** (`runtime/sync_engine.py`): Decoupled synchronizer matching video frames with AI metadata via exact timestamp logic.
-- **Adapters** (`infrastructure/mqtt/`): `MqttVideoAdapter` and `MqttMetadataAdapter` ingest live data stream conforming to `VideoReaderProtocol` and `MetadataReaderProtocol`.
+## Key Files
+- `edge_server_cplusplus/src/main.cpp` (Primary event loop and pipeline orchestration)
+- `edge_server_cplusplus/include/config.hpp` (Centralized thresholds and environment config)
 
 ## Dependencies
-- **MQTT Broker**: Used for low-latency live telemetry.
-- **MinIO S3**: Used for reliable batch image uploads (Active Learning & OOD cases).
-- **YOLOv8**: Core inference engine on Edge.
+- CUDA & TensorRT (`nvinfer`)
+- OpenCV (Image processing)
+- Paho MQTT (Telemetry)
+- libcurl (MinIO uploads)
+- nlohmann_json (Metadata serialization)

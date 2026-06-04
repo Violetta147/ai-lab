@@ -1,0 +1,55 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "Edge Server C++ Architecture",
+  "description": "Walkthrough of the high-performance C++ edge inference pipeline for Jetson.",
+  "ref": "main",
+  "steps": [
+    {
+      "directory": "edge_server_cplusplus",
+      "title": "Edge Server Root",
+      "description": "This is a C++20 project built for Jetson devices using TensorRT and CUDA for real-time video inference."
+    },
+    {
+      "file": "edge_server_cplusplus/CMakeLists.txt",
+      "line": 8,
+      "title": "Dependencies",
+      "description": "The project relies heavily on CUDA, OpenCV for frame processing, and nvinfer for TensorRT. It also links Paho MQTT and cURL for cloud sync."
+    },
+    {
+      "file": "edge_server_cplusplus/include/config.hpp",
+      "line": 10,
+      "title": "Global Configuration",
+      "description": "All tuning parameters for Active Learning (confidence bounds, brightness), OOD rules (bounding box sizes), and network paths are centralized here."
+    },
+    {
+      "file": "edge_server_cplusplus/src/main.cpp",
+      "line": 24,
+      "title": "Application Entry",
+      "description": "The main loop orchestrates video capture, inference, and filtering. It runs in the primary thread to minimize latency."
+    },
+    {
+      "file": "edge_server_cplusplus/src/main.cpp",
+      "line": 63,
+      "title": "TensorRT Inference",
+      "description": "Frames are passed into the TensorRT YOLO engine. The results are raw detections (bounding boxes, classes, confidences)."
+    },
+    {
+      "file": "edge_server_cplusplus/src/main.cpp",
+      "line": 67,
+      "title": "Filtering Pipeline",
+      "description": "Detections pass through OOD (Out-of-Distribution) and Active Learning filters. If a frame is deemed 'anomalous' or the model is 'unsure', it gets flagged for saving."
+    },
+    {
+      "file": "edge_server_cplusplus/src/main.cpp",
+      "line": 93,
+      "title": "Safe RAM Queue",
+      "description": "Flagged frames are pushed to a thread-safe RAM queue. This prevents the fast inference loop from blocking on slow disk I/O."
+    },
+    {
+      "file": "edge_server_cplusplus/src/main.cpp",
+      "line": 39,
+      "title": "Disk Writer & Sync Threads",
+      "description": "Background threads consume the RAM queue (writing to disk) and synchronize offline data to MinIO/MQTT when connectivity is restored."
+    }
+  ]
+}
