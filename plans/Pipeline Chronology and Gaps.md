@@ -59,15 +59,6 @@ Tài liệu này phân tích chi tiết quy trình vận hành của pipeline th
 
 Nội dung code thực tế trên Jetson Nano cho thấy nhiều điểm đi ngược lại với các giả định thiết kế ban đầu của hệ thống. Dưới đây là các câu hỏi quan trọng cần xác nhận:
 
-### Câu hỏi 1: Mục tiêu hiển thị Web là "Live Bounding Box liên tục" hay "Chỉ hiển thị khi có sự kiện"?
-*   **Mâu thuẫn**: `c2_center` (Web Server) được thiết kế với `SyncEngine` chạy ở tốc độ 15-25 FPS để hiển thị bounding box xe chạy mượt mà theo thời gian thực. Tuy nhiên, `edge_server` trên Jetson mặc định bật `ACTIVE_LEARNING_ENABLED = True` nên **chỉ gửi dữ liệu cực kỳ thưa thớt** (chỉ khi có ảnh mờ, lóa, hoặc model bị phân vân).
-*   **Vấn đề**: Hầu hết thời gian Web sẽ không nhận được metadata mới. Bounding box trên web sẽ bị đóng băng (freeze) hoặc biến mất, khiến trải nghiệm giám sát live bị hỏng.
-*   **Câu hỏi**: Bạn muốn điều chỉnh Jetson để gửi liên tục (tắt Active Learning cho luồng live) hay Web chỉ hiển thị box nhảy cóc khi có sự kiện khó?
-
-### Câu hỏi 2: Làm sao để bộ IoU Tracker hoạt động khi dữ liệu gửi lên thưa thớt?
-*   **Mâu thuẫn**: Bộ IoU Tracker trên server (`iou_tracker.py`) tính toán khoảng cách overlap giữa các khung hình liên tiếp để gán ID. Nếu Jetson chỉ gửi dữ liệu thưa thớt (ví dụ 6 giây gửi 1 lần do cooldown), khoảng cách dịch chuyển của xe giữa 2 lần gửi là quá lớn. IoU giữa hai frame sẽ luôn bằng `0.0`.
-*   **Vấn đề**: Bộ tracker sẽ liên tục tạo ID mới cho cùng một chiếc xe (ID nhảy liên tục), làm hỏng toàn bộ các chỉ số thống kê (đếm xe qua vạch, đo tốc độ).
-*   **Câu hỏi**: Có nên tách luồng metadata làm đôi: Một luồng gửi tọa độ thô liên tục (không kèm ảnh) để Web tracking mượt mà, và một luồng riêng chỉ gửi ảnh khó lên MinIO phục vụ MLOps?
 
 ### Câu hỏi 3: Lỗi sai lệch tọa độ bounding box (`xyxy` vs `xywh`)
 *   **Mâu thuẫn**: Jetson gửi tọa độ dạng `[x1, y1, x2, y2]` (xyxy). Server nhận được lại tự động chạy hàm `_xywh_to_xyxy()`.
