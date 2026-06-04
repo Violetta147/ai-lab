@@ -71,7 +71,6 @@ output/
 # Temporary files
 *.tmp
 *.temp
-tmp/
 temp/
 
 # OS specific
