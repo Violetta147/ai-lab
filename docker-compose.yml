@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  # MQTT Broker for Edge -> Backend communication
+  mqtt:
+    image: eclipse-mosquitto:latest
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    restart: unless-stopped
+    networks:
+      - mlops_traffic_net
+
+  # PostgreSQL for tracking history
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER:-admin}
+      POSTGRES_PASSWORD: ${DB_PASS:-admin}
+      POSTGRES_DB: ${DB_NAME:-c2_tracking}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - mlops_traffic_net
+
+  # Redis for Celery queues
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - mlops_traffic_net
+
+  # MinIO for storing raw detection crops/images
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-password123}
+    ports:
+      - "9000:9000"
+      - "9002:9001" # Mapped to 9002 to avoid conflict with Mosquitto websocket
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+    networks:
+      - mlops_traffic_net
+
+volumes:
+  mosquitto_data:
+  mosquitto_log:
+  pg_data:
+  redis_data:
+  minio_data:
+
+networks:
+  mlops_traffic_net:
+    name: mlops_traffic_net

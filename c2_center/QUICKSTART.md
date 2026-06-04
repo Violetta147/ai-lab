@@ -5,21 +5,21 @@ This guide provides instructions to start the entire C2 Center pipeline: Infrast
 ## Prerequisites
 - **Node.js** (v18+)
 - **Python 3.13** (with dependencies in `c2_center/backend/requirements.txt` installed)
-- **Docker / Docker Desktop** (for Kafka and Zookeeper)
+- **Docker / Docker Desktop** (for MQTT, Postgres, Redis, MinIO)
 - **MediaMTX** binary (for RTSP streaming)
 - **Jetson Nano** (with DeepStream 6.0.1+ for edge AI)
 
 ---
 
-## 1. Start Infrastructure (Kafka & Zookeeper)
+## 1. Start Infrastructure (MQTT, Database, Cache, Storage)
 
-The system relies on Kafka to receive metadata from the Edge AI.
+The system relies on MQTT to receive metadata from the Edge AI.
 
 ```powershell
-cd D:\datas\Final.yolov8\c2_center
+cd D:\datas\Final.yolov8
 docker compose up -d
 ```
-Wait a few seconds for Kafka to be ready on port `9092`.
+Wait a few seconds for MQTT to be ready on port `1883`.
 
 ---
 
@@ -79,7 +79,7 @@ cd D:\datas\Final.yolov8\rstp\mediamtx_v1.17.1_windows_amd64
 > - **CPU**: Core #4 pegged at 99%.
 > - **Risk**: Imminent thermal throttling and frame drops. INT8 optimization or resolution downscaling is highly recommended.
 
-The Edge AI component runs on the Jetson Nano, pulling RTSP streams, running YOLO inference, and publishing JSON metadata to Kafka.
+The Edge AI component runs on the Jetson Nano, pulling RTSP streams, running YOLO inference, and publishing JSON metadata to MQTT.
 
 1. **Deployment**: Upload your model (`.engine`), labels (`_labels.txt`), ONNX file, and the appropriate setup script to the Jetson Nano.
 2. **Launch Container**:
@@ -121,7 +121,7 @@ The setup scripts now automatically apply critical fixes from the latest [RCA](d
 
 Once all components are running, verify the pipeline:
 
-1. **Backend Health:** Go to `http://localhost:8000/api/health`. You should see `"kafka_connected": true`.
+1. **Backend Health:** Go to `http://localhost:8000/api/health`. You should see `"mqtt_connected": true`.
 2. **Grid View:** Open the Frontend -> **Grid View** tab. You should see live video feeds.
 3. **Deep Analysis:** Go to the **Deep Analysis** tab. Select your algorithm (e.g., Line Crossing). The UI will present the corresponding parameters (Entry/Exit lines).
 4. **Live Telemetry:** Monitor `jtop` on the Jetson Nano to ensure the pipeline is stable and not thermal throttling.
