@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 from collections import deque
 
 from paho.mqtt import client as mqtt_client
@@ -18,6 +19,14 @@ class MqttMetadataAdapter:
         self.client.on_disconnect = self._on_disconnect
         self.client.on_message = self._on_message
         
+        # Parse YOLO_LABELS from environment
+        try:
+            _labels_env = os.environ.get("YOLO_LABELS", '{"0": "bus", "1": "car", "2": "motor", "3": "truck"}')
+            self._labels = {int(k): v for k, v in json.loads(_labels_env).items()}
+        except Exception as e:
+            logger.warning(f"Failed to parse YOLO_LABELS: {e}")
+            self._labels = {0: "bus", 1: "car", 2: "motor", 3: "truck"}
+
         # Buffer to store metadata per stream
         self._queues: dict[str, deque] = {}
 
@@ -46,6 +55,14 @@ class MqttMetadataAdapter:
             payload = json.loads(msg.payload.decode())
             camera_id = payload.get("camera_id")
             if camera_id:
+                if "detections" in payload:
+                    for det in payload["detections"]:
+                        cid = det.get("class_label", det.get("class_id"))
+                        if cid is not None:
+                            det["class_name"] = self._labels.get(int(cid), f"Unknown {cid}")
+                        elif "class_name" not in det:
+                            det["class_name"] = "Unknown"
+                            
                 if camera_id not in self._queues:
                     self._queues[camera_id] = deque(maxlen=50)
                 self._queues[camera_id].append(payload)
