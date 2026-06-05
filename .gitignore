@@ -1,13 +1,39 @@
-# Thư mục môi trường ảo
+# ─────────── Python ───────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# ─────────── Virtual Environments ───────────
 venv/
 env/
-.env
+.venv/
 
-# Các file mô hình AI (quá nặng, không nên push lên GitHub)
+# ─────────── Environment & Secrets ───────────
+.env
+*.env.local
+
+# ─────────── AI Model Weights (quá nặng cho Git) ───────────
 *.pt
 *.pth
 *.onnx
 *.h5
+*.tflite
+*.engine
 
-# Thư mục git bên trong thư mục con
+# ─────────── Dữ liệu tạm / Training output ───────────
+cvat_temp/
+dataset_train*/
+pipeline_runs/
+celerybeat-schedule*
+
+# ─────────── Git lồng nhau ───────────
 PBL5-Server/cvat/.git/
+
+# ─────────── IDE ───────────
+.idea/
+.vscode/
+*.swp
+*.swo

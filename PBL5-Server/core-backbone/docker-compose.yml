@@ -10,6 +10,12 @@ services:
       - "55432:5432"
     volumes:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d traffic_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   # 2. Object Storage lưu ảnh
   minio:
@@ -21,33 +27,56 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadminpassword
     command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   # 3. Redis làm Broker cho Celery
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
 
-  # 3. MQTT Broker để nhận tin nhắn từ Edge
+  # 4. MQTT Broker để nhận tin nhắn từ Edge
   mqtt:
     image: eclipse-mosquitto
     ports:
       - "1883:1883"
     volumes:
       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mqtt_data:/mosquitto/data
 
-  # 4. Subscriber Service (Xử lý dữ liệu và lưu vào DB)
+  # 5. Subscriber Service (Xử lý dữ liệu và lưu vào DB)
   subscriber:
     build: .
     restart: always
     depends_on:
-      - db
-      - mqtt
+      db:
+        condition: service_healthy
+      mqtt:
+        condition: service_started
     environment:
       - DB_HOST=db
       - DB_PORT=5432
       - MQTT_BROKER=mqtt
       - MQTT_PORT=1883
+
+volumes:
+  pgdata:
+  minio_data:
+  redis_data:
+  mqtt_data:
 
 networks:
   default:
