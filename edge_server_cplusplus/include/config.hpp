@@ -33,7 +33,8 @@ inline constexpr const char* LIVE_VIDEO_TOPIC = "traffic/live_video";
 inline constexpr const char* METADATA_TOPIC = "traffic/metadata";
 
 // MinIO
-inline constexpr const char* MINIO_BUCKET = "raw-images";
+inline constexpr const char* MINIO_ENDPOINT = "192.168.1.29:9000";
+inline constexpr const char* MINIO_BUCKET = "raw-data";
 
 // Publish Gate
 inline constexpr float PUBLISH_COOLDOWN_SECONDS = 1.0f;

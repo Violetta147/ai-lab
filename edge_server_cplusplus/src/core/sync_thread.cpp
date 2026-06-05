@@ -49,23 +49,37 @@ void SyncThread::run() {
                     std::string img_path = json_path.substr(0, json_path.length() - 5); // remove .json
 
                     if (std::filesystem::exists(img_path)) {
-                        std::filesystem::path img_p(img_path);
-                        bool img_ok = minio_client_.upload_file(edge::config::MINIO_BUCKET, img_p.filename().string(), img_path);
-                        bool json_ok = minio_client_.upload_file(edge::config::MINIO_BUCKET, path.filename().string(), json_path);
+                        try {
+                            std::filesystem::path img_p(img_path);
+                            bool img_ok = minio_client_.upload_file(edge::config::MINIO_BUCKET, img_p.filename().string(), img_path);
 
-                        if (img_ok && json_ok) {
-                            // Read JSON to publish to MQTT
-                            std::ifstream f(json_path);
-                            nlohmann::json data = nlohmann::json::parse(f);
-                            mqtt_client_.publish(edge::config::METADATA_TOPIC, data.dump());
+                            if (img_ok) {
+                                // Read JSON to publish to MQTT
+                                std::ifstream f(json_path);
+                                if (!f.is_open()) {
+                                    std::cerr << "[SyncThread] Cannot open JSON file: " << json_path << std::endl;
+                                    continue;
+                                }
+                                nlohmann::json data = nlohmann::json::parse(f);
+                                mqtt_client_.publish(edge::config::METADATA_TOPIC, data.dump());
 
-                            // Delete both
-                            f.close();
+                                // Delete both
+                                f.close();
+                                std::filesystem::remove(img_path);
+                                std::filesystem::remove(json_path);
+                                std::cout << "[SyncThread] Synced and removed: " << path.filename().string() << std::endl;
+                            } else {
+                                std::cerr << "[SyncThread] Failed to sync: " << path.filename().string() << std::endl;
+                            }
+                        } catch (const nlohmann::json::exception& e) {
+                            std::cerr << "[SyncThread] JSON Parse error for " << json_path << ": " << e.what() << std::endl;
                             std::filesystem::remove(img_path);
                             std::filesystem::remove(json_path);
-                            std::cout << "[SyncThread] Synced and removed: " << path.filename().string() << std::endl;
-                        } else {
-                            std::cerr << "[SyncThread] Failed to sync: " << path.filename().string() << std::endl;
+                        } catch (const std::exception& e) {
+                            std::cerr << "[SyncThread] Error processing file " << json_path << ": " << e.what() << std::endl;
+                            // Optionally remove corrupted files to prevent infinite loop
+                            std::filesystem::remove(img_path);
+                            std::filesystem::remove(json_path);
                         }
                     }
                 }

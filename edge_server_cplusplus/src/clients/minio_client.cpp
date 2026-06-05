@@ -50,12 +50,19 @@ bool MinioClient::upload_file(const std::string& bucket_name, const std::string&
     // Use libcurl's built-in AWS SigV4 support (curl >= 7.75.0)
     curl_easy_setopt(curl, CURLOPT_AWS_SIGV4, "s3:us-east-1:auto");
 
+    // MinIO requires x-amz-content-sha256 header. Libcurl doesn't add it automatically.
+    struct curl_slist* headers = NULL;
+    headers = curl_slist_append(headers, "x-amz-content-sha256: UNSIGNED-PAYLOAD");
+    headers = curl_slist_append(headers, "Content-Type: application/octet-stream");
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
     CURLcode res = curl_easy_perform(curl);
     
     long http_code = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
 
     fclose(fd);
+    curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) {

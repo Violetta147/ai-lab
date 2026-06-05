@@ -27,8 +27,11 @@ void DiskWriterThread::stop() {
     }
 }
 
+#include <sys/stat.h>
+
 void DiskWriterThread::run() {
     std::cout << "🚀 Disk Writer Thread started.\n";
+    mkdir("buffer", 0777);
     while (running_) {
         auto item = queue_.pop(std::chrono::milliseconds(1000));
         if (!item) {
@@ -57,9 +60,13 @@ void DiskWriterThread::run() {
         j["detections"] = dets;
 
         std::string json_path = img_path + ".json";
-        std::ofstream o(json_path);
+        std::string tmp_json_path = json_path + ".tmp";
+        std::ofstream o(tmp_json_path);
         o << j.dump(4) << std::endl;
         o.close();
+        
+        // Atomic rename to ensure SyncThread doesn't read partial files
+        rename(tmp_json_path.c_str(), json_path.c_str());
 
         // std::cout << "Saved " << img_path << std::endl;
     }

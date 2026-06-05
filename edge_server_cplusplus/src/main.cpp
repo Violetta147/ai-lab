@@ -83,7 +83,7 @@ private:
 int main() {
     std::cout << "Starting edge_server_cplusplus...\n";
 
-    edge::clients::MinioClient minio(edge::config::MQTT_BROKER, "minioadmin", "minioadmin");
+    edge::clients::MinioClient minio(edge::config::MINIO_ENDPOINT, "admin", "password123");
     edge::clients::MqttClient mqtt(edge::config::MQTT_BROKER, edge::config::MQTT_PORT, std::string("edge_") + edge::config::CAMERA_ID);
     
     edge::filters::ActiveLearningFilter al_filter;
