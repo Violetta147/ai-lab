@@ -47,9 +47,9 @@ The core infrastructure services share a common Docker network (`mlops_traffic_n
 
 ```powershell
 # Open terminal at the root of the project
-cd D:\datas\Final.yolov8
+cd D:\datas\Final.yolov8\data_pipeline\core-backbone
 
-# Start MQTT, PostgreSQL, Redis, and MinIO in the background
+# Start MQTT, PostgreSQL, Redis, MinIO, and MediaMTX in the background
 docker compose up -d
 ```
 *Wait a few seconds for all containers to reach a `running` state.*
@@ -141,46 +141,41 @@ Open your browser and navigate to `http://localhost:5173`.
 
 ## 📹 8. Starting Camera Streams & Edge AI (Jetson Nano)
 
-### 🎥 8.1 Start MediaMTX & a Simulated Camera Stream (FFmpeg)
-Before streaming any video, you must start the **MediaMTX** RTSP server. This acts as the central router for your video streams.
+In this architecture, the **Jetson Nano (Edge Server)** is responsible for:
+1. Capturing video directly from a USB/CSI camera or an IP Camera (RTSP).
+2. Running YOLOv8 inference to generate bounding boxes.
+3. Pushing the annotated video stream to **MediaMTX** (running in Docker on the backend).
 
-Open a **new PowerShell terminal** and start MediaMTX:
-```powershell
-cd D:\datas\Final.yolov8\rstp\mediamtx_v1.17.1_windows_amd64
-.\mediamtx.exe ..\..\c2_center\infrastructure\mediamtx.yml
-```
+### 🎥 8.1 Setup Video Input for Jetson
 
-Once MediaMTX is running, open **another PowerShell terminal** and run the following FFmpeg command. It loops a sample video, resizes it to **640x640** (optimal for YOLO), uses H.264, and pushes it via TCP to prevent latency issues in the OpenCV backend:
+You can feed video into the Jetson in two ways:
+- **Local Camera:** Plug a USB camera directly into the Jetson (e.g., `/dev/video0`).
+- **IP Camera:** Use an RTSP URL from an IP Camera in the same local network.
 
-```powershell
-ffmpeg -re -stream_loop -1 -i "D:\datas\Final.yolov8\datasets\VID_20260404_160133.mp4" -vf "scale=640:640" -c:v libx264 -preset ultrafast -tune zerolatency -b:v 2M -maxrate 2M -bufsize 4M -pix_fmt yuv420p -g 30 -rtsp_transport tcp -f rtsp rtsp://localhost:8554/cam_01
-```
-*(Note: Make sure you have added a camera with RTSP URL `rtsp://localhost:8554/cam_01` in the Frontend UI!)*
+*If you just want to test on your Laptop without a Jetson or real camera, you can use a simulated video stream instead. Check out [Simulating Edge Data](#-63-simulating-edge-data-no-videohardware-needed).*
 
 ### 🚀 8.2 Start the Edge Server (YOLO Inference)
 
-You can run either the Python or C++ version of the Edge Server to perform YOLO detection and publish bounding boxes back to the `c2_center` over MQTT.
+We recommend using the C++ Edge Server for maximum performance on Jetson hardware.
 
-#### Option A: Python Edge Server
-This runs the standard Python implementation.
-```powershell
-cd D:\datas\Final.yolov8\edge_server
-# Install dependencies if you haven't already
-pip install -r requirements.txt
-# Start the edge server
-python main.py
-```
-
-#### Option B: C++ DeepStream Edge Server (`edge_server_cplusplus`)
-For maximum performance on Jetson hardware, compile and run the C++ version:
 ```bash
 cd D:\datas\Final.yolov8\edge_server_cplusplus
 mkdir build && cd build
 cmake ..
-make -j$(nproc)
+make -j4
+
+# Define your video source (USB camera or RTSP URL)
+export VIDEO_PATH="/dev/video0" # Or "rtsp://admin:1234@192.168.1.100/stream"
+
+# Define the IP of your backend laptop running MediaMTX
+export MEDIAMTX_HOST="172.16.0.252"
+export MQTT_BROKER="172.16.0.252"
+
 # Start the C++ edge server
-./edge_server
+./c2_edge_server
 ```
+
+*(Once started, Jetson will push the final video to `rtsp://172.16.0.252:8554/cam_01`. The Backend will pull this stream automatically and display it in the Frontend!)*
 
 ### 🧪 6.3 Simulating Edge Data (No Video/Hardware Needed)
 If you don't want to run FFmpeg or the YOLO models locally, you can use our built-in tests to push fake tracking data to your local MQTT broker:
