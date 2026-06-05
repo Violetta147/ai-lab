@@ -84,8 +84,10 @@ private:
 int main() {
     std::cout << "Starting edge_server_cplusplus...\n";
 
-    // Load environment variables from .env file
-    edge::utils::load_dotenv(".env");
+    // Load environment variables from .env file or ../.env
+    if (!edge::utils::load_dotenv(".env")) {
+        edge::utils::load_dotenv("../.env");
+    }
 
     edge::clients::MinioClient minio(edge::config::MINIO_ENDPOINT(), "minioadmin", "minioadminpassword");
     edge::clients::MqttClient mqtt(edge::config::MQTT_BROKER(), edge::config::MQTT_PORT(), std::string("edge_") + edge::config::CAMERA_ID());
@@ -94,21 +96,16 @@ int main() {
     edge::filters::RuleBasedOodFilter ood_filter;
     edge::filters::PublishGate pub_gate;
 
-    edge::core::SafeQueue<edge::BufferItem> ram_queue(100);
+    edge::core::SafeQueue<edge::BufferItem> ram_queue(10); // Reduced from 100 to 10 for Edge devices
     
     edge::core::DiskWriterThread disk_writer(ram_queue);
     edge::core::SyncThread sync_thread(minio, mqtt);
 
-    disk_writer.start();
-    sync_thread.start();
-
-    // Load YOLO TensorRT model
+    // Load YOLO TensorRT model FIRST to avoid OOM crash during memory spike
     std::cout << "[Main] Loading YOLO TensorRT engine from: " << edge::config::MODEL_PATH << "... (This may take 10-30 seconds)\n";
     std::shared_ptr<yolo::Infer> yolo_infer = yolo::load(edge::config::MODEL_PATH, yolo::Type::V8, edge::config::CONFIDENCE_THRESHOLD);
     if (!yolo_infer) {
         std::cerr << "Failed to load YOLO model: " << edge::config::MODEL_PATH << "\n";
-        disk_writer.stop();
-        sync_thread.stop();
         return -1;
     }
     std::cout << "[Main] YOLO engine loaded successfully.\n";
@@ -118,10 +115,12 @@ int main() {
     CameraStream camera(edge::config::VIDEO_PATH(), edge::config::USE_VIDEO_SOURCE);
     if (!camera.start()) {
         std::cerr << "Failed to open video source: " << (edge::config::USE_VIDEO_SOURCE ? edge::config::VIDEO_PATH() : "Camera 0") << "\n";
-        disk_writer.stop();
-        sync_thread.stop();
         return -1;
     }
+
+    // Start background threads ONLY AFTER TensorRT and Camera have safely allocated their memory
+    disk_writer.start();
+    sync_thread.start();
 
     std::cout << "Start processing loop (Luồng 1).\n";
     cv::Mat frame;
