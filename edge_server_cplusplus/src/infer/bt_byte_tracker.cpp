@@ -37,7 +37,7 @@ float bbox_iou(const std::vector<float> &a, const std::vector<float> &b) {
 }  // namespace
 
 ByteTracker::ByteTracker(int frame_rate, int track_buffer)
-    : track_thresh_(0.5f),
+    : track_thresh_(0.25f),
       high_thresh_(0.6f),
       match_thresh_(0.8f),
       frame_id_(0),

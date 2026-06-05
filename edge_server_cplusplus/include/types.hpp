@@ -11,6 +11,7 @@ struct Detection {
     std::string class_name;
     float conf;
     std::vector<int> bbox; // x1, y1, x2, y2
+    int tracker_id = -1; // Added for ByteTracker
 };
 
 struct FrameMetadata {

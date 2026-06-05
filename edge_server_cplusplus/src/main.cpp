@@ -20,7 +20,7 @@
 #include "core/disk_writer_thread.hpp"
 #include "core/sync_thread.hpp"
 #include "infer/yolo.hpp"
-#include "utils/base64.hpp"
+#include "infer/bt_byte_tracker.hpp"
 
 // Background reader to prevent RTSP buffer overflow and H264 corruption
 class CameraStream {
@@ -122,6 +122,11 @@ int main() {
     disk_writer.start();
     sync_thread.start();
 
+    // Initialize ByteTracker and VideoWriter
+    ByteTracker tracker(30, 30);
+    cv::VideoWriter writer;
+    bool writer_initialized = false;
+
     std::cout << "Start processing loop (Luồng 1).\n";
     cv::Mat frame;
     int frame_count = 0;
@@ -148,12 +153,32 @@ int main() {
         
         // TensorRT Inference
         auto boxes = yolo_infer->forward(yolo::Image(frame.data, frame.cols, frame.rows));
-        std::vector<edge::Detection> detections;
+        
+        std::vector<ByteObject> byte_objects;
+        byte_objects.reserve(boxes.size());
         for (const auto& b : boxes) {
+            ByteObject obj;
+            obj.rect = cv::Rect_<float>(b.left, b.top, b.right - b.left, b.bottom - b.top);
+            obj.label = b.class_label;
+            obj.prob = b.confidence;
+            byte_objects.push_back(obj);
+        }
+        
+        std::vector<STrack> tracked_stracks = tracker.update(byte_objects);
+
+        std::vector<edge::Detection> detections;
+        detections.reserve(tracked_stracks.size());
+        for (const auto& t : tracked_stracks) {
             edge::Detection d;
-            d.class_name = std::to_string(b.class_label); 
-            d.conf = b.confidence;
-            d.bbox = { static_cast<int>(b.left), static_cast<int>(b.top), static_cast<int>(b.right), static_cast<int>(b.bottom) };
+            d.class_name = std::to_string(t.label); 
+            d.conf = t.score;
+            d.bbox = { static_cast<int>(t.tlbr[0]), static_cast<int>(t.tlbr[1]), static_cast<int>(t.tlbr[2]), static_cast<int>(t.tlbr[3]) };
+            d.tracker_id = t.track_id;
+            
+            // Draw box and ID on frame
+            cv::rectangle(frame, cv::Point(d.bbox[0], d.bbox[1]), cv::Point(d.bbox[2], d.bbox[3]), cv::Scalar(0, 255, 0), 2);
+            cv::putText(frame, "ID: " + std::to_string(t.track_id), cv::Point(d.bbox[0], d.bbox[1] - 5), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 2);
+
             detections.push_back(d);
         }
         
@@ -177,24 +202,37 @@ int main() {
             j_dets.push_back({
                 {"class", d.class_name},
                 {"conf", d.conf},
-                {"bbox", d.bbox}
+                {"bbox", d.bbox},
+                {"tracker_id", d.tracker_id}
             });
         }
         j_meta["detections"] = j_dets;
         mqtt.publish(edge::config::LIVE_TRACKING_TOPIC, j_meta.dump(), 0);
 
-        // Resize the frame for MQTT video stream to save CPU and Bandwidth
-        // Fix: Use 640x640 to match bounding box coordinate scale exactly!
-        cv::Mat small_frame;
-        cv::resize(frame, small_frame, cv::Size(640, 640));
+        // Initialize VideoWriter on first frame
+        if (!writer_initialized) {
+            std::string backend_ip = "127.0.0.1";
+            if (const char* env_ip = std::getenv("BACKEND_STREAM_IP")) {
+                backend_ip = env_ip;
+            }
+            std::string stream_id = edge::config::CAMERA_ID();
+            std::string rtsp_url = "rtsp://" + backend_ip + ":8554/" + stream_id;
+            
+            // GStreamer pipeline for Jetson (nvv4l2h264enc) to RTSP Push
+            std::string pipeline = "appsrc ! videoconvert ! nvv4l2h264enc insert-sps-pps=true bitrate=4000000 ! h264parse ! rtspclientsink location=" + rtsp_url;
+            
+            std::cout << "[VideoWriter] Opening RTSP push to: " << rtsp_url << "\n";
+            writer.open(pipeline, cv::CAP_GSTREAMER, 0, 15, cv::Size(frame.cols, frame.rows), true);
+            if (!writer.isOpened()) {
+                std::cerr << "[VideoWriter] ERROR: Failed to open GStreamer VideoWriter!\n";
+            }
+            writer_initialized = true;
+        }
 
-        // MQTT Publishing Video Frame
-        std::string b64_frame = edge::utils::base64_encode_image(small_frame, 60); // Quality 60
-        nlohmann::json j_vid;
-        j_vid["camera_id"] = live_meta.camera_id;
-        j_vid["timestamp"] = live_meta.timestamp;
-        j_vid["frame"] = b64_frame;
-        mqtt.publish(edge::config::LIVE_VIDEO_TOPIC, j_vid.dump(), 0);
+        // Write the drawn frame to RTSP stream
+        if (writer.isOpened()) {
+            writer.write(frame);
+        }
 
         // Run filters for Buffer Storage
         auto [rule_hit, rule_reason] = ood_filter.should_flag_ood(detections, frame.cols, frame.rows);

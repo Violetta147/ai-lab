@@ -72,29 +72,28 @@ The MLOps Data Pipeline requires 5 specific buckets to function correctly. You m
 
 ---
 
-## 🏷️ 5. Install CVAT (Computer Vision Annotation Tool)
+## 🏷️ 5. Install CVAT & Auto-Provisioning
 
-Our `data_pipeline` automatically pushes unconfident detections to CVAT for manual labeling. CVAT needs to be installed in a separate directory.
+Our `data_pipeline` automatically pushes unconfident detections to CVAT for manual labeling. CVAT is now integrated as a git submodule inside `data_pipeline`, which resolves network routing automatically (`mlops_traffic_net`).
 
 ```powershell
-# Go to a directory outside this project, e.g. D:\datas
-git clone https://github.com/cvat-ai/cvat
+# 1. Initialize the CVAT submodule
+cd D:\datas\Final.yolov8\data_pipeline
+git submodule update --init --recursive
+
+# 2. Start CVAT
 cd cvat
-
-# Set CVAT_HOST to your local network IP (e.g., 172.16.0.252) so Docker containers can reach it
+# Set CVAT_HOST to your local network IP (e.g., 172.16.0.252) if accessing from another machine
 $env:CVAT_HOST="172.16.0.252" 
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
-# Start CVAT
-docker compose up -d
-
-# Apply database migrations first
-docker exec -it cvat_server bash -ic "python3 ~/manage.py migrate"
-
-# Create an admin account
-docker exec -it cvat_server bash -ic "python3 ~/manage.py createsuperuser"
+# 3. Auto-Provision Project, User, and Cloud Storage
+cd D:\datas\Final.yolov8\data_pipeline
+python scripts/setup_cvat_env.py
 ```
 
-> ⚠️ **Update Pipeline Config**: After installing CVAT, open `Final.yolov8/data_pipeline/pipeline/docker-compose.yml` and update `CVAT_URL` to match your local IP (e.g., `http://172.16.0.252:8080`).
+> 💡 **What does `setup_cvat_env.py` do?**
+> Instead of manually migrating the database, creating superusers, manually clicking to create a Project, and hooking up MinIO Cloud Storage, this script uses CVAT's API to automate all of it. It then auto-writes the resulting `CVAT_PROJECT_ID` and `CVAT_CLOUD_STORAGE_ID` straight into your `.env` file!
 
 ---
 
