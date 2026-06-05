@@ -3,9 +3,20 @@
 # Screen 1: Add, edit, enable/disable, delete any cameras
 # All changes sync to backend immediately.
 
-param(
-    [string]$ApiBase = "http://localhost:8000"
+param (
+    [string]$EnvPath = "..\.env",
+    [string]$ApiBase = ""
 )
+
+# Parse .env to get VITE_API_BASE_URL if ApiBase is not provided
+if ([string]::IsNullOrEmpty($ApiBase)) {
+    $ApiBase = "http://localhost:8000"
+    if (Test-Path $EnvPath) {
+        Get-Content $EnvPath | Where-Object { $_ -match '^VITE_API_BASE_URL=(.*)' } | ForEach-Object {
+            $ApiBase = $matches[1]
+        }
+    }
+}
 
 $ErrorActionPreference = "Stop"
 

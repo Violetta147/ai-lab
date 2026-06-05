@@ -47,6 +47,7 @@ set(SOURCES
     src/core/disk_writer_thread.cpp
     src/core/sync_thread.cpp
     src/utils/base64.cpp
+    src/utils/dotenv.cpp
     # Inference files
     src/infer/yolo.cu
     src/infer/infer.cu

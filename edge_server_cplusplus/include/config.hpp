@@ -3,9 +3,21 @@
 #include <string>
 #include <vector>
 #include <tuple>
+#include <cstdlib>
 
 namespace edge {
 namespace config {
+
+// Helper để đọc env an toàn
+inline std::string get_env_or(const char* key, const char* default_val) {
+    const char* val = std::getenv(key);
+    return val ? std::string(val) : std::string(default_val);
+}
+
+inline int get_env_int_or(const char* key, int default_val) {
+    const char* val = std::getenv(key);
+    return val ? std::stoi(val) : default_val;
+}
 
 // Active Learning
 inline constexpr bool ACTIVE_LEARNING_ENABLED = true;
@@ -20,20 +32,20 @@ inline constexpr float CONFIDENCE_THRESHOLD = 0.5f;
 inline constexpr int INFERENCE_INTERVAL_MS = 100; // e.g. 100ms = 10 FPS
 
 // General
-inline constexpr const char* CAMERA_ID = "cam_01";
+inline std::string CAMERA_ID() { return get_env_or("CAMERA_ID", "cam_01"); }
 inline constexpr const char* MODEL_PATH = "../models/yolov8n.transd.engine";
 inline constexpr bool USE_VIDEO_SOURCE = true;
-inline constexpr const char* VIDEO_PATH = "rtsp://192.168.1.29:8554/cam_01"; // Update to your exact stream URL if different
+inline std::string VIDEO_PATH() { return get_env_or("VIDEO_PATH", "rtsp://127.0.0.1:8554/cam_01"); }
 
 // MQTT
-inline constexpr const char* MQTT_BROKER = "192.168.1.29";
-inline constexpr int MQTT_PORT = 1883;
+inline std::string MQTT_BROKER() { return get_env_or("MQTT_BROKER", "127.0.0.1"); }
+inline int MQTT_PORT() { return get_env_int_or("MQTT_PORT", 1883); }
 inline constexpr const char* LIVE_TRACKING_TOPIC = "traffic/live_tracking";
 inline constexpr const char* LIVE_VIDEO_TOPIC = "traffic/live_video";
 inline constexpr const char* METADATA_TOPIC = "traffic/metadata";
 
 // MinIO
-inline constexpr const char* MINIO_ENDPOINT = "192.168.1.29:9000";
+inline std::string MINIO_ENDPOINT() { return get_env_or("MINIO_ENDPOINT", "127.0.0.1:9000"); }
 inline constexpr const char* MINIO_BUCKET = "raw-data";
 
 // Publish Gate

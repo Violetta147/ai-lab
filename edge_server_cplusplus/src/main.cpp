@@ -11,6 +11,7 @@
 #include "../include/config.hpp"
 #include "../include/types.hpp"
 #include "../include/safe_queue.hpp"
+#include "../include/utils/dotenv.hpp"
 #include "filters/active_learning.hpp"
 #include "filters/rule_ood.hpp"
 #include "filters/publish_gate.hpp"
@@ -83,8 +84,11 @@ private:
 int main() {
     std::cout << "Starting edge_server_cplusplus...\n";
 
-    edge::clients::MinioClient minio(edge::config::MINIO_ENDPOINT, "admin", "password123");
-    edge::clients::MqttClient mqtt(edge::config::MQTT_BROKER, edge::config::MQTT_PORT, std::string("edge_") + edge::config::CAMERA_ID);
+    // Load environment variables from .env file
+    edge::utils::load_dotenv(".env");
+
+    edge::clients::MinioClient minio(edge::config::MINIO_ENDPOINT(), "admin", "password123");
+    edge::clients::MqttClient mqtt(edge::config::MQTT_BROKER(), edge::config::MQTT_PORT(), std::string("edge_") + edge::config::CAMERA_ID());
     
     edge::filters::ActiveLearningFilter al_filter;
     edge::filters::RuleBasedOodFilter ood_filter;
@@ -111,9 +115,9 @@ int main() {
 
     // Start video capture in a background thread
     std::cout << "[Main] Opening video source... (If it hangs here, check your RTSP stream)\n";
-    CameraStream camera(edge::config::VIDEO_PATH, edge::config::USE_VIDEO_SOURCE);
+    CameraStream camera(edge::config::VIDEO_PATH(), edge::config::USE_VIDEO_SOURCE);
     if (!camera.start()) {
-        std::cerr << "Failed to open video source: " << (edge::config::USE_VIDEO_SOURCE ? edge::config::VIDEO_PATH : "Camera 0") << "\n";
+        std::cerr << "Failed to open video source: " << (edge::config::USE_VIDEO_SOURCE ? edge::config::VIDEO_PATH() : "Camera 0") << "\n";
         disk_writer.stop();
         sync_thread.stop();
         return -1;
@@ -156,7 +160,7 @@ int main() {
         
         // Prepare Live Telemetry & Video (Send unconditionally)
         edge::FrameMetadata live_meta;
-        live_meta.camera_id = edge::config::CAMERA_ID;
+        live_meta.camera_id = edge::config::CAMERA_ID();
         live_meta.image_url = "raw_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".jpg";
         live_meta.timestamp = std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
         live_meta.trigger_reason = "live_stream";

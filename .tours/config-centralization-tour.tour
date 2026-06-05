@@ -1,0 +1,72 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "Config Centralization Tour",
+  "description": "Walkthrough of how the IPs were centralized into .env files for the Edge and Center domains.",
+  "ref": "main",
+  "steps": [
+    {
+      "file": "edge_server_cplusplus/.env",
+      "line": 1,
+      "title": "Edge Config File",
+      "description": "This `.env` file holds the configuration for the Edge Domain (C++). Hardcoded IPs for MinIO, MQTT, and RTSP are now centralized here."
+    },
+    {
+      "file": "edge_server_cplusplus/include/utils/dotenv.hpp",
+      "line": 14,
+      "title": "Dotenv Parser (Header)",
+      "description": "Since C++ doesn't have a built-in `.env` parser, a lightweight utility was created to load these variables at runtime."
+    },
+    {
+      "file": "edge_server_cplusplus/src/utils/dotenv.cpp",
+      "line": 48,
+      "title": "Environment Variable Injection",
+      "description": "The parser reads the `.env` file, extracts keys and values, and injects them into the current process's environment variables using `_putenv_s` (Windows) or `setenv` (Linux)."
+    },
+    {
+      "file": "edge_server_cplusplus/include/config.hpp",
+      "line": 12,
+      "title": "Config Getter Helpers",
+      "description": "These helper functions safely fetch environment variables and provide a fallback default if the `.env` file or variable is missing."
+    },
+    {
+      "file": "edge_server_cplusplus/include/config.hpp",
+      "line": 41,
+      "title": "Dynamic Config Fetching",
+      "description": "Instead of `constexpr` strings, we now use inline functions that call our `get_env_or` helpers. This ensures we can change IPs without recompiling the C++ code."
+    },
+    {
+      "file": "edge_server_cplusplus/src/main.cpp",
+      "line": 86,
+      "title": "Loading the Config",
+      "description": "At the start of `main()`, we call `load_dotenv` so that the variables are loaded before any clients (like MQTT or MinIO) try to read them."
+    },
+    {
+      "file": "c2_center/.env",
+      "line": 1,
+      "title": "Center Config File",
+      "description": "Similarly, the Center Domain gets its own `.env` file for backend and MQTT IPs."
+    },
+    {
+      "file": "c2_center/frontend/vite.config.js",
+      "line": 4,
+      "title": "Vite Config Loading",
+      "description": "Vite is configured to use `loadEnv` to fetch `VITE_API_BASE_URL` so the frontend knows where to route API requests."
+    },
+    {
+      "file": "data_pipeline/check_mqtt.py",
+      "line": 9,
+      "title": "Python MQTT Script",
+      "description": "Python natively reads from `os.getenv`, allowing the `check_mqtt.py` script to connect to the broker defined in the environment."
+    },
+    {
+      "file": "c2_center/infrastructure/manage_cameras.ps1",
+      "line": 10,
+      "title": "PowerShell Script Support",
+      "description": "The PowerShell script natively parses the `.env` file using RegEx to find the backend URL, providing a seamless experience when executing administration tasks."
+    },
+    {
+      "title": "Next Steps",
+      "description": "You can now edit `.env` in `edge_server_cplusplus` or `c2_center` and restart the respective services to point them to new IPs without any code modifications."
+    }
+  ]
+}
