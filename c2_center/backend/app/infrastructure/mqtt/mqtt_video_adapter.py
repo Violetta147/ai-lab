@@ -32,6 +32,21 @@ class MqttVideoAdapter:
         self.client.loop_stop()
         self.client.disconnect()
 
+    def start(self) -> None:
+        """Start the adapter (alias for connect, to match IVideoAdapter)."""
+        pass  # connect is usually called in wire_live_pipeline
+
+    def stop(self) -> None:
+        """Stop the adapter."""
+        self.disconnect()
+
+    def add_stream(self, stream_id: str, rtsp_url: str) -> bool:
+        """MQTT video adapter ignores RTSP URL, just returns True."""
+        return True
+
+    def remove_stream(self, stream_id: str) -> bool:
+        return True
+
     def _on_connect(self, client, userdata, flags, rc):
         if rc == 0:
             logger.info("MqttVideoAdapter connected")
