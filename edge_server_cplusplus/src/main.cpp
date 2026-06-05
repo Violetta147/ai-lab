@@ -87,7 +87,7 @@ int main() {
     // Load environment variables from .env file
     edge::utils::load_dotenv(".env");
 
-    edge::clients::MinioClient minio(edge::config::MINIO_ENDPOINT(), "admin", "password123");
+    edge::clients::MinioClient minio(edge::config::MINIO_ENDPOINT(), "minioadmin", "minioadminpassword");
     edge::clients::MqttClient mqtt(edge::config::MQTT_BROKER(), edge::config::MQTT_PORT(), std::string("edge_") + edge::config::CAMERA_ID());
     
     edge::filters::ActiveLearningFilter al_filter;

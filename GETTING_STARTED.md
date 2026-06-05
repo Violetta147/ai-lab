@@ -42,10 +42,12 @@ The MLOps Data Pipeline requires 5 specific buckets to function correctly. You m
    - Password: `password123`
 3. Go to **Buckets** on the left menu and click **Create Bucket**. Create the following exactly as named:
    - `raw-data` *(Used by Edge Server to upload raw frames)*
+   - `pseudo-labels` *(Used to store AI-generated pre-labels)*
+   - `archived-images` *(Used for archiving old data)*
+   - `archived-labels` *(Used for archiving old labels)*
    - `labeled-data` *(Used by CVAT for human annotations)*
    - `base-dataset` *(Used for training datasets)*
    - `production-models` *(Used to store .pt and .engine AI models)*
-   - `archived-images` *(Used for archiving old data)*
 
 ---
 

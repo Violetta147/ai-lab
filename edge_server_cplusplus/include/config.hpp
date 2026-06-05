@@ -42,7 +42,7 @@ inline std::string MQTT_BROKER() { return get_env_or("MQTT_BROKER", "127.0.0.1")
 inline int MQTT_PORT() { return get_env_int_or("MQTT_PORT", 1883); }
 inline constexpr const char* LIVE_TRACKING_TOPIC = "traffic/live_tracking";
 inline constexpr const char* LIVE_VIDEO_TOPIC = "traffic/live_video";
-inline constexpr const char* METADATA_TOPIC = "traffic/metadata";
+inline constexpr const char* METADATA_TOPIC = "traffic/detections";
 
 // MinIO
 inline std::string MINIO_ENDPOINT() { return get_env_or("MINIO_ENDPOINT", "127.0.0.1:9000"); }
