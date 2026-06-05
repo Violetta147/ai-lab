@@ -1,0 +1,13 @@
+# Thư mục môi trường ảo
+venv/
+env/
+.env
+
+# Các file mô hình AI (quá nặng, không nên push lên GitHub)
+*.pt
+*.pth
+*.onnx
+*.h5
+
+# Thư mục git bên trong thư mục con
+PBL5-Server/cvat/.git/
