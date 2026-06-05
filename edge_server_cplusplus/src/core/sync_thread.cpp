@@ -1,6 +1,10 @@
 #include "sync_thread.hpp"
 #include <iostream>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <nlohmann/json.hpp>
+#include "../../include/config.hpp"
 
 namespace edge {
 namespace core {
@@ -26,14 +30,51 @@ void SyncThread::stop() {
 
 void SyncThread::run() {
     std::cout << "☁️ Background Sync Thread started.\n";
+    std::filesystem::path buffer_dir("buffer");
+
     while (running_) {
-        // Sleep to yield CPU
         std::this_thread::sleep_for(std::chrono::seconds(2));
 
-        // In a full implementation, this would scan the "buffer/" directory,
-        // read the .json and .jpg files, upload them via minio_client_,
-        // and then publish success to mqtt_client_.
-        // For the sake of this C++ structure scaffolding, we sleep.
+        if (!std::filesystem::exists(buffer_dir) || !std::filesystem::is_directory(buffer_dir)) {
+            continue;
+        }
+
+        try {
+            for (const auto& entry : std::filesystem::directory_iterator(buffer_dir)) {
+                if (!entry.is_regular_file()) continue;
+
+                auto path = entry.path();
+                if (path.extension() == ".json") {
+                    std::string json_path = path.string();
+                    std::string img_path = json_path.substr(0, json_path.length() - 5); // remove .json
+
+                    if (std::filesystem::exists(img_path)) {
+                        std::filesystem::path img_p(img_path);
+                        bool img_ok = minio_client_.upload_file(edge::config::MINIO_BUCKET, img_p.filename().string(), img_path);
+                        bool json_ok = minio_client_.upload_file(edge::config::MINIO_BUCKET, path.filename().string(), json_path);
+
+                        if (img_ok && json_ok) {
+                            // Read JSON to publish to MQTT
+                            std::ifstream f(json_path);
+                            nlohmann::json data = nlohmann::json::parse(f);
+                            mqtt_client_.publish(edge::config::METADATA_TOPIC, data.dump());
+
+                            // Delete both
+                            f.close();
+                            std::filesystem::remove(img_path);
+                            std::filesystem::remove(json_path);
+                            std::cout << "[SyncThread] Synced and removed: " << path.filename().string() << std::endl;
+                        } else {
+                            std::cerr << "[SyncThread] Failed to sync: " << path.filename().string() << std::endl;
+                        }
+                    }
+                }
+            }
+        } catch (const std::filesystem::filesystem_error& e) {
+            std::cerr << "[SyncThread] Filesystem error: " << e.what() << std::endl;
+        } catch (const std::exception& e) {
+            std::cerr << "[SyncThread] Exception: " << e.what() << std::endl;
+        }
     }
 }
 

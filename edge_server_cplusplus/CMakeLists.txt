@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.16)
 project(edge_server_cplusplus LANGUAGES CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -18,6 +18,7 @@ include_directories(
     ${OpenCV_INCLUDE_DIRS}
     /usr/local/cuda/include
     /usr/include/aarch64-linux-gnu
+    /usr/include/eigen3
 )
 
 # Fetch nlohmann_json
@@ -45,6 +46,7 @@ set(SOURCES
     src/clients/minio_client.cpp
     src/core/disk_writer_thread.cpp
     src/core/sync_thread.cpp
+    src/utils/base64.cpp
     # Inference files
     src/infer/yolo.cu
     src/infer/infer.cu

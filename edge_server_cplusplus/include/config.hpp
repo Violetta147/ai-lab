@@ -20,14 +20,19 @@ inline constexpr float CONFIDENCE_THRESHOLD = 0.5f;
 
 // General
 inline constexpr const char* CAMERA_ID = "cam_01";
-inline constexpr const char* MODEL_PATH = "models/yolov8n.transd.engine";
-inline constexpr bool USE_VIDEO_SOURCE = false;
-inline constexpr const char* VIDEO_PATH = "bus.jpg"; // or /dev/video0
+inline constexpr const char* MODEL_PATH = "../models/yolov8n.transd.engine";
+inline constexpr bool USE_VIDEO_SOURCE = true;
+inline constexpr const char* VIDEO_PATH = "rtsp://192.168.1.29:8554/cam_01"; // Update to your exact stream URL if different
 
 // MQTT
-inline constexpr const char* MQTT_BROKER = "localhost";
+inline constexpr const char* MQTT_BROKER = "192.168.1.29";
 inline constexpr int MQTT_PORT = 1883;
-inline constexpr const char* LIVE_MQTT_TOPIC = "traffic/live";
+inline constexpr const char* LIVE_TRACKING_TOPIC = "traffic/live_tracking";
+inline constexpr const char* LIVE_VIDEO_TOPIC = "traffic/live_video";
+inline constexpr const char* METADATA_TOPIC = "traffic/metadata";
+
+// MinIO
+inline constexpr const char* MINIO_BUCKET = "raw-images";
 
 // Publish Gate
 inline constexpr float PUBLISH_COOLDOWN_SECONDS = 1.0f;

@@ -13,6 +13,12 @@ public:
     SyncThread(clients::MinioClient& minio_client, clients::MqttClient& mqtt_client);
     ~SyncThread();
 
+    // Prevent copies (C.21)
+    SyncThread(const SyncThread&) = delete;
+    SyncThread& operator=(const SyncThread&) = delete;
+    SyncThread(SyncThread&&) = delete;
+    SyncThread& operator=(SyncThread&&) = delete;
+
     void start();
     void stop();
 

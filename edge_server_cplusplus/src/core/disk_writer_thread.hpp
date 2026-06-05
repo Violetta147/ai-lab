@@ -13,6 +13,12 @@ public:
     DiskWriterThread(SafeQueue<BufferItem>& queue);
     ~DiskWriterThread();
 
+    // Prevent copies (C.21)
+    DiskWriterThread(const DiskWriterThread&) = delete;
+    DiskWriterThread& operator=(const DiskWriterThread&) = delete;
+    DiskWriterThread(DiskWriterThread&&) = delete;
+    DiskWriterThread& operator=(DiskWriterThread&&) = delete;
+
     void start();
     void stop();
 

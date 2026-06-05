@@ -105,7 +105,11 @@ std::pair<bool, std::string> RuleBasedOodFilter::should_flag_ood(const std::vect
     }
     
     if (is_score_hit) {
-        return {false, "Rule OOD score hit but waiting persistence"};
+        std::string reason = "Rule OOD score hit but waiting persistence";
+        if (!soft_reasons.empty()) {
+            reason += " | " + soft_reasons[0];
+        }
+        return {false, reason};
     }
 
     return {false, "Rule OOD clear"};
