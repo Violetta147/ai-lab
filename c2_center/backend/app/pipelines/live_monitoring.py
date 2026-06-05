@@ -17,12 +17,12 @@ from app.core.config import settings
 from app.infrastructure.database.camera_repository import CameraRepository
 from app.infrastructure.database.zone_repository import ZoneRepository
 from app.infrastructure.kafka.consumer import KafkaConsumerService
+from app.infrastructure.mqtt.consumer import MqttDetectionConsumerService
 from app.infrastructure.models.registry import ModelRegistry
 from app.infrastructure.video.rtsp_reader import RtspVideoReader
 from app.runtime.analytics_dispatcher import AnalyticsDispatcher
 from app.runtime.pipeline_manager import PipelineManager
 from app.runtime.stream_manager import StreamManager
-from app.runtime.sync_engine import SyncEngine
 from app.ws.streamer import WsStreamer
 
 logger = logging.getLogger(__name__)
@@ -35,9 +35,8 @@ class LivePipelineHandle:
     stream_manager: StreamManager
     pipeline_manager: PipelineManager
     analytics_dispatcher: AnalyticsDispatcher
-    sync_engine: SyncEngine
     video_reader: RtspVideoReader
-    kafka_consumer: KafkaConsumerService
+    kafka_consumer: KafkaConsumerService | MqttDetectionConsumerService
     model_registry: ModelRegistry
     ws_streamer: WsStreamer
     camera_repo: CameraRepository
@@ -140,22 +139,10 @@ def wire_live_pipeline(
     model_registry: ModelRegistry,
 ) -> LivePipelineHandle:
     """Construct and connect the full live monitoring pipeline."""
-    if settings.VIDEO_SOURCE == "mqtt":
-        from app.infrastructure.mqtt.mqtt_video_adapter import MqttVideoAdapter
-        video_reader = MqttVideoAdapter(
-            broker=settings.MQTT_BROKER,
-            port=settings.MQTT_PORT,
-            topic=settings.MQTT_VIDEO_TOPIC
-        )
-        video_reader.connect()
-        logger.info("Video source: MQTT (%s:%d topic=%s)", settings.MQTT_BROKER, settings.MQTT_PORT, settings.MQTT_TOPIC)
-    else:
-        video_reader = RtspVideoReader()
-        logger.info("Video source: RTSP")
+    video_reader = RtspVideoReader()
+    logger.info("Video source: RTSP")
 
     if settings.METADATA_SOURCE == "mqtt":
-        from app.infrastructure.mqtt.consumer import MqttDetectionConsumerService
-
         kafka_consumer = MqttDetectionConsumerService()
         logger.info(
             "Metadata source: MQTT (%s:%d topic=%s)",
@@ -170,11 +157,10 @@ def wire_live_pipeline(
             settings.KAFKA_BOOTSTRAP,
             settings.KAFKA_TOPIC,
         )
-    sync_engine = SyncEngine(video_reader, kafka_consumer)
-
     dispatcher = AnalyticsDispatcher(registry)
     pipeline_manager = PipelineManager(
-        sync_engine=sync_engine,
+        video_reader=video_reader,
+        metadata_consumer=kafka_consumer,
         dispatcher=dispatcher,
         zone_repo=zone_repo,
         model_registry=model_registry,
@@ -190,7 +176,6 @@ def wire_live_pipeline(
         stream_manager=stream_manager,
         pipeline_manager=pipeline_manager,
         analytics_dispatcher=dispatcher,
-        sync_engine=sync_engine,
         video_reader=video_reader,
         kafka_consumer=kafka_consumer,
         model_registry=model_registry,

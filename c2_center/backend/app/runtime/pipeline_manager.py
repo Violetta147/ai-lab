@@ -17,12 +17,14 @@ import time
 from typing import Awaitable, Callable
 
 import numpy as np
-import supervision as sv
 
 from app.core.config import settings
 from app.domain.detection.converters import metadata_to_detections
+from app.infrastructure.video.rtsp_reader import RtspVideoReader
+from app.infrastructure.mqtt.consumer import MqttDetectionConsumerService
+from app.infrastructure.models.registry import ModelRegistry
+from app.infrastructure.database.zone_repository import ZoneRepository
 from app.runtime.analytics_dispatcher import AnalyticsDispatcher
-from app.runtime.sync_engine import SyncEngine
 
 logger = logging.getLogger(__name__)
 
@@ -37,17 +39,18 @@ class PipelineManager:
 
     def __init__(
         self,
-        sync_engine: SyncEngine,
+        video_reader: RtspVideoReader,
+        metadata_consumer: MqttDetectionConsumerService,
         dispatcher: AnalyticsDispatcher,
-        zone_repo,
-        model_registry,
+        zone_repo: ZoneRepository,
+        model_registry: ModelRegistry,
     ) -> None:
-        self._sync = sync_engine
+        self._video = video_reader
+        self._metadata = metadata_consumer
         self._dispatcher = dispatcher
         self._zone_repo = zone_repo
         self._model_registry = model_registry
 
-        self._trackers: dict[str, sv.ByteTrack] = {}
         self._tasks: dict[str, asyncio.Task] = {}
         self._frame_subs: list[FrameSubscriber] = []
         self._stats_subs: list[StatsSubscriber] = []
@@ -90,8 +93,6 @@ class PipelineManager:
         if not self._running:
             logger.warning("Pipeline manager not started; deferring stream %s", stream_id)
             return
-        
-        self._trackers[stream_id] = sv.ByteTrack(minimum_consecutive_frames=1)
         self._dispatcher.attach_stream(stream_id)
         task = asyncio.create_task(self._loop(stream_id), name=f"pipeline-{stream_id}")
         self._tasks[stream_id] = task
@@ -102,27 +103,27 @@ class PipelineManager:
         task = self._tasks.pop(stream_id, None)
         if task:
             task.cancel()
-        self._trackers.pop(stream_id, None)
         self._dispatcher.detach_stream(stream_id)
 
     async def _loop(self, stream_id: str) -> None:
         """Main processing loop for a single stream."""
-        interval = 1.0 / max(1, settings.WS_TARGET_FPS)
         last_stats_at = 0.0
 
         while self._running:
             try:
-                t0 = time.time()
-
                 # Pacing: Ensure we don't run faster than the target FPS to avoid metadata reuse
                 loop_start = time.time()
-                target_fps = 25.0
+                target_fps = max(1.0, float(settings.WS_TARGET_FPS))
                 frame_time = 1.0 / target_fps
 
-                frame, objects = await self._sync.get_synced_frame(stream_id)
-                if frame is None:
+                frame_data = getattr(self._video, "get_latest_frame", lambda s: self._video.get_closest_frame(s, time.time()))(stream_id)
+                if frame_data is None:
                     await asyncio.sleep(0.01)
                     continue
+                frame, _ = frame_data
+                
+                meta = await self._metadata.pop_latest(stream_id)
+                objects = meta.get("objects", []) if meta else []
 
                 detections = metadata_to_detections(objects)
 
@@ -166,10 +167,6 @@ class PipelineManager:
                         )
                     self._diag_logged = True
                 # ============================================================
-
-                if len(detections) > 0 and getattr(detections, 'tracker_id', None) is None:
-                    if stream_id in self._trackers:
-                        detections = self._trackers[stream_id].update_with_detections(detections=detections)
 
                 if not objects:
                     # Skip analytics if no objects, but keep emitting stats to avoid WS timeout

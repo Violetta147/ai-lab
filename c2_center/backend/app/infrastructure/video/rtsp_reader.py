@@ -6,8 +6,6 @@ and pushing (frame, timestamp) into bounded per-stream queues. Each thread
 auto-reconnects with exponential backoff on failure.
 """
 
-import logging
-import queue
 import collections
 import logging
 import threading

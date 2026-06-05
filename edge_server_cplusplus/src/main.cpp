@@ -184,8 +184,9 @@ int main() {
         mqtt.publish(edge::config::LIVE_TRACKING_TOPIC, j_meta.dump(), 0);
 
         // Resize the frame for MQTT video stream to save CPU and Bandwidth
+        // Fix: Use 640x640 to match bounding box coordinate scale exactly!
         cv::Mat small_frame;
-        cv::resize(frame, small_frame, cv::Size(640, 480));
+        cv::resize(frame, small_frame, cv::Size(640, 640));
 
         // MQTT Publishing Video Frame
         std::string b64_frame = edge::utils::base64_encode_image(small_frame, 60); // Quality 60
