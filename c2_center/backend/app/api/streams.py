@@ -7,12 +7,12 @@ from app.core.config import settings
 router = APIRouter(prefix="/api", tags=["streams"])
 
 
-def get_router(sync_engine, kafka_consumer=None):
+def get_router(stream_manager, kafka_consumer=None):
     @router.get("/health")
     async def health():
         streams = {}
-        for sid in sync_engine.get_stream_ids():
-            streams[sid] = sync_engine.get_stream_status(sid)
+        for sid in stream_manager.all_streams():
+            streams[sid] = {"stream_id": sid, "state": "active"}
         kafka_connected = False
         if kafka_consumer is not None:
             try:
@@ -30,9 +30,8 @@ def get_router(sync_engine, kafka_consumer=None):
     @router.get("/streams")
     async def list_streams():
         result = []
-        for sid in sync_engine.get_stream_ids():
-            status = sync_engine.get_stream_status(sid)
-            result.append(status)
+        for sid in stream_manager.all_streams():
+            result.append({"stream_id": sid, "state": "active"})
         return result
 
     return router

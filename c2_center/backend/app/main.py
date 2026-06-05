@@ -131,7 +131,7 @@ app.add_middleware(
 
 # --- REST API routes ---
 app.include_router(
-    streams_module.get_router(pipeline.sync_engine, pipeline.kafka_consumer)
+    streams_module.get_router(pipeline.stream_manager, pipeline.kafka_consumer)
 )
 app.include_router(cameras_module.get_router(pipeline))
 app.include_router(zones_module.router)
