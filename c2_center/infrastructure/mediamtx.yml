@@ -8,7 +8,7 @@ rtspServerKey: ""
 rtspServerCert: ""
 
 paths:
-  muahe:
+  cam_01:
     source: publisher
     sourceOnDemand: no
 
