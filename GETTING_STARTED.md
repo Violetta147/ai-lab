@@ -60,8 +60,8 @@ Our `data_pipeline` automatically pushes unconfident detections to CVAT for manu
 git clone https://github.com/cvat-ai/cvat
 cd cvat
 
-# Set CVAT_HOST to your local network IP (e.g., 192.168.1.50) so Docker containers can reach it
-$env:CVAT_HOST="192.168.1.50" 
+# Set CVAT_HOST to your local network IP (e.g., 172.16.0.252) so Docker containers can reach it
+$env:CVAT_HOST="172.16.0.252" 
 
 # Start CVAT
 docker compose up -d
@@ -73,7 +73,7 @@ docker exec -it cvat_server bash -ic "python3 ~/manage.py migrate"
 docker exec -it cvat_server bash -ic "python3 ~/manage.py createsuperuser"
 ```
 
-> ⚠️ **Update Pipeline Config**: After installing CVAT, open `Final.yolov8/data_pipeline/pipeline/docker-compose.yml` and update `CVAT_URL` to match your local IP (e.g., `http://192.168.1.50:8080`).
+> ⚠️ **Update Pipeline Config**: After installing CVAT, open `Final.yolov8/data_pipeline/pipeline/docker-compose.yml` and update `CVAT_URL` to match your local IP (e.g., `http://172.16.0.252:8080`).
 
 ---
 
