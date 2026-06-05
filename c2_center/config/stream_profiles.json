@@ -5,6 +5,12 @@
       "resolution": [1920, 1080],
       "roi_polygon": [[759, 306], [1077, 325], [1477, 957], [292, 917]],
       "description": "Mua He camera - main intersection ROI"
+    },
+    "cam_01": {
+      "source_index": 1,
+      "resolution": [1920, 1080],
+      "roi_polygon": [[759, 306], [1077, 325], [1477, 957], [292, 917]],
+      "description": "Camera 01 ROI"
     }
   }
 }
