@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useWebSocket, apiFetch } from '../hooks/useWebSocket';
+import PolygonDrawer from '../components/PolygonDrawer';
 
 /* ── Metric definitions per algorithm ──────────────────────────── */
 const ALGO_METRICS = {
@@ -62,6 +63,13 @@ export default function DeepAnalysis() {
   const [classCounts, setClassCounts] = useState({});
   const [health, setHealth] = useState(null);
 
+  // --- Drawing State ---
+  const [drawMode, setDrawMode] = useState(null); // 'polygon' | 'entry_line' | 'exit_line'
+  const [lockedFrameUrl, setLockedFrameUrl] = useState(null);
+  const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 });
+  const [zones, setZones] = useState({});
+  const [isSavingZones, setIsSavingZones] = useState(false);
+
   useEffect(() => {
     apiFetch('/api/streams')
       .then(data => {
@@ -93,6 +101,13 @@ export default function DeepAnalysis() {
         if (data?.algorithm) setActiveAlgo(data.algorithm);
       })
       .catch(() => {});
+      
+    // Also fetch zones for this stream
+    apiFetch(`/api/zones/${activeStream}`)
+      .then(data => {
+        setZones(data || {});
+      })
+      .catch(() => setZones({}));
   }, [activeStream]);
 
   useEffect(() => {
@@ -159,6 +174,57 @@ export default function DeepAnalysis() {
     }
   };
 
+  // --- Drawing Handlers ---
+  const lockFrame = useCallback(() => {
+    if (!frame) return;
+    const img = new Image();
+    img.onload = () => {
+      setNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
+      setLockedFrameUrl(frame);
+      setDrawMode(null);
+    };
+    img.src = frame;
+  }, [frame]);
+
+  const unlockFrame = useCallback(() => {
+    setLockedFrameUrl(null);
+    setNaturalSize({ width: 0, height: 0 });
+    setDrawMode(null);
+  }, []);
+
+  const handleZoneComplete = useCallback((points) => {
+    const key = drawMode === 'polygon' ? 'roi_polygon' :
+      drawMode === 'entry_line' ? 'entry_line' : 'exit_line';
+    setZones(prev => ({ 
+      ...prev, 
+      [key]: points,
+      roi_config_resolution: [naturalSize.width, naturalSize.height]
+    }));
+    setDrawMode(null);
+  }, [drawMode, naturalSize]);
+
+  const clearZones = useCallback(() => {
+    setZones({});
+    setDrawMode(null);
+  }, []);
+
+  const saveZones = useCallback(async () => {
+    if (!activeStream) return;
+    setIsSavingZones(true);
+    try {
+      await apiFetch(`/api/zones/${activeStream}`, {
+        method: 'PUT',
+        body: JSON.stringify(zones),
+      });
+      unlockFrame();
+    } catch (e) {
+      console.error('Failed to save zones:', e);
+      alert('Failed to save zones: ' + e.message);
+    } finally {
+      setIsSavingZones(false);
+    }
+  }, [activeStream, zones, unlockFrame]);
+
   // Build dynamic metrics
   const algoMetrics = ALGO_METRICS[activeAlgo];
   const metricItems = algoMetrics
@@ -184,8 +250,24 @@ export default function DeepAnalysis() {
         )}
 
         {/* Video feed — takes all available space */}
-        <div className="glass-card da-video-container">
-          {frame ? <img src={frame} alt="stream" /> : (
+        <div className="glass-card da-video-container" style={{ position: 'relative' }}>
+          {lockedFrameUrl ? (
+            <>
+              <img src={lockedFrameUrl} alt="Locked frame" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              <PolygonDrawer 
+                mode={drawMode} 
+                onComplete={handleZoneComplete} 
+                existingZones={zones} 
+                naturalWidth={naturalSize.width}
+                naturalHeight={naturalSize.height}
+              />
+              <div style={{ position: 'absolute', top: 16, left: 16, display: 'flex', gap: 6, zIndex: 10 }}>
+                <button className="btn btn-ghost" onClick={unlockFrame} style={{ background: 'rgba(0,0,0,0.6)', padding: '6px 12px' }}>🔓 Unlock</button>
+              </div>
+            </>
+          ) : frame ? (
+            <img src={frame} alt="stream" />
+          ) : (
             <div className="da-video-placeholder">
               <div style={{ fontSize: 48, marginBottom: 12 }}>📡</div>
               <div>Waiting for stream...</div>
@@ -214,6 +296,55 @@ export default function DeepAnalysis() {
             ))}
           </select>
         </div>
+
+        {/* Draw Tools */}
+        {activeStream && (
+          <div className="glass-card controls-panel">
+            <div className="section-title"><span>🖊</span> Draw Zones</div>
+            
+            {!lockedFrameUrl ? (
+              <button className="btn btn-primary" onClick={lockFrame} style={{ width: '100%' }} disabled={!frame}>
+                🔒 Lock Frame to Draw
+              </button>
+            ) : (
+              <>
+                {(algorithms.find(a => a.slug === activeAlgo)?.geometry_type === 'polygon') && (
+                  <button className={`btn ${drawMode === 'polygon' ? 'btn-primary' : 'btn-ghost'}`}
+                    onClick={() => setDrawMode(drawMode === 'polygon' ? null : 'polygon')} style={{ width: '100%', marginBottom: 4 }}>
+                    {drawMode === 'polygon' ? '✏️ Drawing ROI...' : 'Draw ROI Polygon'}
+                  </button>
+                )}
+
+                {(['line', 'dual_line'].includes(algorithms.find(a => a.slug === activeAlgo)?.geometry_type)) && (
+                  <>
+                    <button className={`btn ${drawMode === 'entry_line' ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() => setDrawMode(drawMode === 'entry_line' ? null : 'entry_line')} style={{ width: '100%', marginBottom: 4 }}>
+                      {drawMode === 'entry_line' ? '✏️ Drawing Entry...' : 'Draw Entry Line'}
+                    </button>
+                    {algorithms.find(a => a.slug === activeAlgo)?.geometry_type === 'dual_line' && (
+                      <button className={`btn ${drawMode === 'exit_line' ? 'btn-primary' : 'btn-ghost'}`}
+                        onClick={() => setDrawMode(drawMode === 'exit_line' ? null : 'exit_line')} style={{ width: '100%', marginBottom: 4 }}>
+                        {drawMode === 'exit_line' ? '✏️ Drawing Exit...' : 'Draw Exit Line'}
+                      </button>
+                    )}
+                  </>
+                )}
+
+                <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
+                  <button className="btn btn-success" onClick={saveZones} disabled={isSavingZones} style={{ flex: 1 }}>
+                    {isSavingZones ? '⏳' : '💾 Save'}
+                  </button>
+                  <button className="btn btn-danger" onClick={clearZones} style={{ flex: 1 }}>
+                    Clear
+                  </button>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8, textAlign: 'center', fontStyle: 'italic' }}>
+                  Overrides `stream_profiles.json`
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
         {/* Per-class detection counts */}
         <div className="glass-card controls-panel">

@@ -16,24 +16,46 @@ export default function PolygonDrawer({ mode, onComplete, existingZones = {}, na
   const canvasRef = useRef(null);
   const [points, setPoints] = useState([]); // Internal state: Natural pixels
 
-  // Helper to scale Natural -> CSS
-  const toCSS = useCallback((x, y) => {
+  // Helper to scale Natural -> CSS (accounting for objectFit: 'contain')
+  const toCSS = useCallback((nx, ny) => {
     const canvas = canvasRef.current;
-    if (!canvas) return [x, y];
+    if (!canvas || !naturalWidth || !naturalHeight) return [nx, ny];
     const rect = canvas.getBoundingClientRect();
-    const sx = rect.width / naturalWidth;
-    const sy = rect.height / naturalHeight;
-    return [x * sx, y * sy];
+    
+    const scale = Math.min(rect.width / naturalWidth, rect.height / naturalHeight);
+    const renderedWidth = naturalWidth * scale;
+    const renderedHeight = naturalHeight * scale;
+    
+    const offsetX = (rect.width - renderedWidth) / 2;
+    const offsetY = (rect.height - renderedHeight) / 2;
+    
+    return [
+      (nx * scale) + offsetX,
+      (ny * scale) + offsetY
+    ];
   }, [naturalWidth, naturalHeight]);
 
-  // Helper to scale CSS -> Natural
-  const toNatural = useCallback((x, y) => {
+  // Helper to scale CSS -> Natural (accounting for objectFit: 'contain')
+  const toNatural = useCallback((cx, cy) => {
     const canvas = canvasRef.current;
-    if (!canvas) return [x, y];
+    if (!canvas || !naturalWidth || !naturalHeight) return [cx, cy];
     const rect = canvas.getBoundingClientRect();
-    const sx = naturalWidth / rect.width;
-    const sy = naturalHeight / rect.height;
-    return [Math.round(x * sx), Math.round(y * sy)];
+    
+    const scale = Math.min(rect.width / naturalWidth, rect.height / naturalHeight);
+    const renderedWidth = naturalWidth * scale;
+    const renderedHeight = naturalHeight * scale;
+    
+    const offsetX = (rect.width - renderedWidth) / 2;
+    const offsetY = (rect.height - renderedHeight) / 2;
+    
+    const nx = (cx - offsetX) / scale;
+    const ny = (cy - offsetY) / scale;
+    
+    // Clamp to natural bounds to prevent drawing outside the image
+    return [
+      Math.max(0, Math.min(naturalWidth, Math.round(nx))),
+      Math.max(0, Math.min(naturalHeight, Math.round(ny)))
+    ];
   }, [naturalWidth, naturalHeight]);
 
   // Draw existing zones + current drawing
