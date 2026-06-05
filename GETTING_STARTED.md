@@ -20,7 +20,28 @@ Ensure your machine has the following installed:
 
 ---
 
-## 🏗️ 2. Start Core Infrastructure
+## ⚙️ 3. Configure Environment Variables
+
+Before starting the infrastructure, you must configure the global environment variables for the project.
+
+```powershell
+# Open terminal at the root of the project
+cd D:\datas\Final.yolov8
+
+# Copy the example environment file
+cp .env.example .env
+```
+
+Open the newly created `.env` file in your code editor and update the default passwords and settings (like `DB_PASS`, `MINIO_ROOT_PASSWORD`) if necessary.
+
+> 💡 **Note on sub-components:** Some sub-components have their own `.env` files that you will need to update with your local IP address (e.g., `172.16.x.x`):
+> - **Edge Server:** `edge_server_cplusplus/.env` (Requires MQTT & MinIO IPs)
+> - **Data Pipeline:** `data_pipeline/pipeline/.env` (Requires CVAT URL)
+> - **C2 Center Frontend:** `c2_center/.env` (Requires Backend/MQTT IPs)
+
+---
+
+## 🏗️ 4. Start Core Infrastructure
 
 The core infrastructure services share a common Docker network (`mlops_traffic_net`) so that all Python and Node applications can easily reach them.
 
@@ -33,7 +54,7 @@ docker compose up -d
 ```
 *Wait a few seconds for all containers to reach a `running` state.*
 
-### 🪣 2.1 Configure MinIO Buckets
+### 🪣 4.1 Configure MinIO Buckets
 The MLOps Data Pipeline requires 5 specific buckets to function correctly. You must create them before starting the pipeline.
 
 1. Open your browser and navigate to `http://localhost:9002` (MinIO Console).
@@ -51,7 +72,7 @@ The MLOps Data Pipeline requires 5 specific buckets to function correctly. You m
 
 ---
 
-## 🏷️ 3. Install CVAT (Computer Vision Annotation Tool)
+## 🏷️ 5. Install CVAT (Computer Vision Annotation Tool)
 
 Our `data_pipeline` automatically pushes unconfident detections to CVAT for manual labeling. CVAT needs to be installed in a separate directory.
 
@@ -77,7 +98,7 @@ docker exec -it cvat_server bash -ic "python3 ~/manage.py createsuperuser"
 
 ---
 
-## ⚙️ 4. Start the Data Pipeline
+## ⚙️ 6. Start the Data Pipeline
 
 The Data Pipeline listens to MQTT for edge detections and uses Celery to process them in the background.
 
@@ -90,7 +111,7 @@ docker compose up -d
 
 ---
 
-## 🖥️ 5. Start the C2 Center (Backend & Frontend)
+## 🖥️ 7. Start the C2 Center (Backend & Frontend)
 
 ### Backend (FastAPI)
 The backend coordinates WebSockets and RTSP streams.
@@ -119,9 +140,9 @@ Open your browser and navigate to `http://localhost:5173`.
 
 ---
 
-## 📹 6. Starting Camera Streams & Edge AI (Jetson Nano)
+## 📹 8. Starting Camera Streams & Edge AI (Jetson Nano)
 
-### 🎥 6.1 Start MediaMTX & a Simulated Camera Stream (FFmpeg)
+### 🎥 8.1 Start MediaMTX & a Simulated Camera Stream (FFmpeg)
 Before streaming any video, you must start the **MediaMTX** RTSP server. This acts as the central router for your video streams.
 
 Open a **new PowerShell terminal** and start MediaMTX:
@@ -137,7 +158,7 @@ ffmpeg -re -stream_loop -1 -i "D:\datas\Final.yolov8\datasets\VID_20260404_16013
 ```
 *(Note: Make sure you have added a camera with RTSP URL `rtsp://localhost:8554/cam_01` in the Frontend UI!)*
 
-### 🚀 6.2 Start the Edge Server (YOLO Inference)
+### 🚀 8.2 Start the Edge Server (YOLO Inference)
 
 You can run either the Python or C++ version of the Edge Server to perform YOLO detection and publish bounding boxes back to the `c2_center` over MQTT.
 
