@@ -17,6 +17,7 @@ inline constexpr float ACTIVE_LEARNING_MIN_BLUR = 50.0f;
 
 // Inference
 inline constexpr float CONFIDENCE_THRESHOLD = 0.5f;
+inline constexpr int INFERENCE_INTERVAL_MS = 100; // e.g. 100ms = 10 FPS
 
 // General
 inline constexpr const char* CAMERA_ID = "cam_01";

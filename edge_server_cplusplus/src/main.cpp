@@ -122,6 +122,7 @@ int main() {
     std::cout << "Start processing loop (Luồng 1).\n";
     cv::Mat frame;
     int frame_count = 0;
+    auto last_inference_time = std::chrono::steady_clock::now();
     
     while (true) {
         if (!camera.get_latest_frame(frame)) {
@@ -129,6 +130,13 @@ int main() {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
             continue;
         }
+        
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_inference_time).count();
+        if (elapsed_ms < edge::config::INFERENCE_INTERVAL_MS) {
+            continue;
+        }
+        last_inference_time = now;
         
         frame_count++;
         if (frame_count % 30 == 0) {
