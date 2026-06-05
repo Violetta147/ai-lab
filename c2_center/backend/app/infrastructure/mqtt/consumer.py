@@ -81,7 +81,7 @@ class MqttDetectionConsumerService:
         metadata = {
             "stream_id": stream_id,
             "timestamp": float(data.get("timestamp", time.time())),
-            "objects": data.get("objects", []),
+            "objects": data.get("detections", data.get("objects", [])),
         }
         with self._lock:
             self._ready[stream_id] = metadata

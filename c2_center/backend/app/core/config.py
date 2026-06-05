@@ -27,13 +27,19 @@ class Settings(BaseSettings):
 
     # --- Metadata source ---
     # "kafka" = DeepStream via Kafka (default)
-    # "mqtt"  = data_pipeline tracking bridge via MQTT
+    # "mqtt"  = Jetson via MQTT
     METADATA_SOURCE: str = "mqtt"
+    
+    # --- Video source ---
+    # "rtsp" = MediaMTX stream
+    # "mqtt" = Base64 JPEG frames via MQTT
+    VIDEO_SOURCE: str = "mqtt"
 
     # --- MQTT consumer (active when METADATA_SOURCE=mqtt) ---
     MQTT_BROKER: str = "127.0.0.1"
     MQTT_PORT: int = 1883
-    MQTT_TOPIC: str = "traffic/tracked"
+    MQTT_TOPIC: str = "traffic/live_tracking"
+    MQTT_VIDEO_TOPIC: str = "traffic/live_video"
     MQTT_QOS: int = 1
     MQTT_CLIENT_ID: str = "c2_center_mqtt"
 

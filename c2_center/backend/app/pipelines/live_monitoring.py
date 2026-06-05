@@ -140,7 +140,19 @@ def wire_live_pipeline(
     model_registry: ModelRegistry,
 ) -> LivePipelineHandle:
     """Construct and connect the full live monitoring pipeline."""
-    video_reader = RtspVideoReader()
+    if settings.VIDEO_SOURCE == "mqtt":
+        from app.infrastructure.mqtt.mqtt_video_adapter import MqttVideoAdapter
+        video_reader = MqttVideoAdapter(
+            broker=settings.MQTT_BROKER,
+            port=settings.MQTT_PORT,
+            topic=settings.MQTT_VIDEO_TOPIC
+        )
+        video_reader.connect()
+        logger.info("Video source: MQTT (%s:%d topic=%s)", settings.MQTT_BROKER, settings.MQTT_PORT, settings.MQTT_TOPIC)
+    else:
+        video_reader = RtspVideoReader()
+        logger.info("Video source: RTSP")
+
     if settings.METADATA_SOURCE == "mqtt":
         from app.infrastructure.mqtt.consumer import MqttDetectionConsumerService
 
