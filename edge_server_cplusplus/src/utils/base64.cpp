@@ -10,6 +10,7 @@ static const std::string base64_chars =
 
 std::string base64_encode(const unsigned char* buf, unsigned int bufLen) {
     std::string ret;
+    ret.reserve(((bufLen + 2) / 3) * 4); // PREVENT HEAP FRAGMENTATION ON EDGE DEVICES
     int i = 0;
     int j = 0;
     unsigned char char_array_3[3];
