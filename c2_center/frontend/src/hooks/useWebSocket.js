@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-const API_BASE = 'http://localhost:8000';
-const WS_BASE = 'ws://localhost:8000';
+const hostname = window.location.hostname;
+const API_BASE = `http://${hostname}:8000`;
+const WS_BASE = `ws://${hostname}:8000`;
 
 /**
  * Hook for WebSocket connection with auto-reconnect.
