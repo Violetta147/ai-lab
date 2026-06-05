@@ -67,14 +67,17 @@ bool MqttClient::publish(const std::string& topic, const std::string& payload, i
 }
 
 void MqttClient::subscribe(const std::string& topic, std::function<void(const std::string&)> callback, int qos) {
+    // TODO: Implement actual Paho MQTT subscribe using MQTTClient_subscribe and MQTTClient_setCallbacks
     std::cout << "[MqttClient] Subscribed to " << topic << std::endl;
 }
 
 void MqttClient::loop_start() {
+    // TODO: Implement background network thread or call MQTTClient_yield periodically
     std::cout << "[MqttClient] Loop started" << std::endl;
 }
 
 void MqttClient::loop_stop() {
+    // TODO: Stop background thread if implemented
     std::cout << "[MqttClient] Loop stopped" << std::endl;
 }
 

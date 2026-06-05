@@ -67,6 +67,18 @@
     {
       "title": "Next Steps",
       "description": "You can now edit `.env` in `edge_server_cplusplus` or `c2_center` and restart the respective services to point them to new IPs without any code modifications."
+    },
+    {
+      "file": "data_pipeline/pipeline/.env",
+      "line": 1,
+      "title": "Data Pipeline Config File",
+      "description": "We also extracted CVAT_URL into its own `.env` file since CVAT lives outside the Docker network."
+    },
+    {
+      "file": "data_pipeline/pipeline/docker-compose.yml",
+      "line": 23,
+      "title": "Docker Compose Dynamic Variable",
+      "description": "The pipeline's compose file uses `${CVAT_URL:-http://...}` to dynamically read the IP while providing a safe fallback."
     }
   ]
 }
