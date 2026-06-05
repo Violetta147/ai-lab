@@ -36,10 +36,10 @@ docker compose up -d
 ### 🪣 2.1 Configure MinIO Buckets
 The MLOps Data Pipeline requires 5 specific buckets to function correctly. You must create them before starting the pipeline.
 
-1. Open your browser and navigate to `http://localhost:9001` (MinIO Console).
-2. Log in with the default credentials:
-   - Username: `minioadmin`
-   - Password: `minioadmin`
+1. Open your browser and navigate to `http://localhost:9002` (MinIO Console).
+2. Log in with the default credentials (as defined in `docker-compose.yml`):
+   - Username: `admin`
+   - Password: `password123`
 3. Go to **Buckets** on the left menu and click **Create Bucket**. Create the following exactly as named:
    - `raw-data` *(Used by Edge Server to upload raw frames)*
    - `labeled-data` *(Used by CVAT for human annotations)*
