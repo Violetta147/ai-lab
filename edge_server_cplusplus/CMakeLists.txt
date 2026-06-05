@@ -16,6 +16,7 @@ find_package(paho-mqtt3c QUIET)
 include_directories(
     include
     ${OpenCV_INCLUDE_DIRS}
+    ${CURL_INCLUDE_DIRS}
     /usr/local/cuda/include
     /usr/include/aarch64-linux-gnu
     /usr/include/eigen3

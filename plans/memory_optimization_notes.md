@@ -29,3 +29,25 @@ By calling `reserve()`, C++ asks the OS for the exact required memory block **on
 ## GPU vs RAM in `jtop`
 - **GPU > 90%**: TensorRT is utilizing the CUDA cores effectively for YOLOv8 inference. This is expected and highly optimal.
 - **RAM not full**: Because the issue was fragmentation, not a memory leak. The total memory consumed remained low, but the continuous "churn" destroyed the availability of contiguous memory blocks.
+
+## Update: Diagnosing std::bad_alloc in SyncThread (June 2026)
+
+**Observed Log**:
+```text
+[SyncThread] Exception: std::bad_alloc
+[SyncThread] Memory at crash - Free RAM: 864 MB / 3964 MB, Free Swap: 4030 MB
+```
+
+**Key Insight**:
+The system has **864 MB of free RAM** and **4030 MB of free Swap (ZRAM)**. This confirms that the crash is **not a global out-of-memory (OOM)** error. 
+Since the main thread continues running and printing `Frame deduplicated` logs, the heap allocator is not globally exhausted. 
+
+**Potential Causes**:
+1. **Virtual Memory Mapping Limits**: Since the application uses CUDA/TensorRT and OpenCV camera stream decoding, it creates a large number of memory mappings. If it hits the Linux limit (`/proc/sys/vm/max_map_count`), any further memory mapping attempts (even small ones like creating a `std::filesystem::directory_iterator`) will fail and throw `std::bad_alloc`.
+2. **Deterministic Large Allocation in SyncThread**: A logic bug or data corruption might cause `SyncThread` to request a massive size allocation (e.g. if parsing a malformed or corrupted JSON file that has a huge field value or if a string length calculation underflows).
+3. **Double Free / Memory Corruption in SyncThread**: A thread-safety race condition on the shared `MqttClient` or files being modified concurrently could corrupt the allocator's internal structure in that specific thread's context.
+
+**Diagnostic Checkpoints**:
+- We have added conditional `<sys/sysinfo.h>` system logging inside [sync_thread.cpp](file:///d:/datas/Final.yolov8/edge_server_cplusplus/src/core/sync_thread.cpp) to verify memory states immediately upon crash.
+- Detailed print checkpoints should be added inside the `SyncThread::run` directory traversal to isolate the exact line throwing the exception.
+- Check the contents of the `buffer/` directory. If a JSON file is empty or corrupted, it must be handled defensively.

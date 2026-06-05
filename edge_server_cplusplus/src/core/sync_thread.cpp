@@ -6,6 +6,13 @@
 #include <nlohmann/json.hpp>
 #include "../../include/config.hpp"
 
+#ifndef _WIN32
+#include <sys/sysinfo.h>
+#include <sys/types.h>
+#include <dirent.h>
+#include <cstdio>
+#endif
+
 namespace edge {
 namespace core {
 
@@ -30,28 +37,36 @@ void SyncThread::stop() {
 
 void SyncThread::run() {
     std::cout << "☁️ Background Sync Thread started.\n";
-    std::filesystem::path buffer_dir("buffer");
+    std::string buffer_dir = "buffer";
 
     while (running_) {
         std::this_thread::sleep_for(std::chrono::seconds(2));
 
-        if (!std::filesystem::exists(buffer_dir) || !std::filesystem::is_directory(buffer_dir)) {
+#ifndef _WIN32
+        DIR* dir = opendir(buffer_dir.c_str());
+        if (!dir) {
             continue;
         }
 
         try {
-            for (const auto& entry : std::filesystem::directory_iterator(buffer_dir)) {
-                if (!entry.is_regular_file()) continue;
+            struct dirent* ent;
+            while ((ent = readdir(dir)) != NULL) {
+                std::string filename = ent->d_name;
+                if (filename == "." || filename == "..") {
+                    continue;
+                }
 
-                auto path = entry.path();
-                if (path.extension() == ".json") {
-                    std::string json_path = path.string();
-                    std::string img_path = json_path.substr(0, json_path.length() - 5); // remove .json
+                // Check if it is a JSON file
+                if (filename.length() > 5 && filename.substr(filename.length() - 5) == ".json") {
+                    std::string json_path = buffer_dir + "/" + filename;
+                    std::string img_filename = filename.substr(0, filename.length() - 5); // remove .json
+                    std::string img_path = buffer_dir + "/" + img_filename;
 
-                    if (std::filesystem::exists(img_path)) {
+                    std::ifstream check_img(img_path);
+                    if (check_img.good()) {
+                        check_img.close();
                         try {
-                            std::filesystem::path img_p(img_path);
-                            bool img_ok = minio_client_.upload_file(edge::config::MINIO_BUCKET, img_p.filename().string(), img_path);
+                            bool img_ok = minio_client_.upload_file(edge::config::MINIO_BUCKET, img_filename, img_path);
 
                             if (img_ok) {
                                 // Read JSON to publish to MQTT
@@ -65,30 +80,72 @@ void SyncThread::run() {
 
                                 // Delete both
                                 f.close();
-                                std::filesystem::remove(img_path);
-                                std::filesystem::remove(json_path);
-                                std::cout << "[SyncThread] Synced and removed: " << path.filename().string() << std::endl;
+                                std::remove(img_path.c_str());
+                                std::remove(json_path.c_str());
+                                std::cout << "[SyncThread] Synced and removed: " << filename << std::endl;
                             } else {
-                                std::cerr << "[SyncThread] Failed to sync: " << path.filename().string() << std::endl;
+                                std::cerr << "[SyncThread] Failed to sync: " << filename << std::endl;
                             }
                         } catch (const nlohmann::json::exception& e) {
                             std::cerr << "[SyncThread] JSON Parse error for " << json_path << ": " << e.what() << std::endl;
-                            std::filesystem::remove(img_path);
-                            std::filesystem::remove(json_path);
+                            std::remove(img_path.c_str());
+                            std::remove(json_path.c_str());
                         } catch (const std::exception& e) {
                             std::cerr << "[SyncThread] Error processing file " << json_path << ": " << e.what() << std::endl;
-                            // Optionally remove corrupted files to prevent infinite loop
-                            std::filesystem::remove(img_path);
-                            std::filesystem::remove(json_path);
+                            std::remove(img_path.c_str());
+                            std::remove(json_path.c_str());
                         }
                     }
                 }
             }
-        } catch (const std::filesystem::filesystem_error& e) {
-            std::cerr << "[SyncThread] Filesystem error: " << e.what() << std::endl;
+            closedir(dir);
         } catch (const std::exception& e) {
-            std::cerr << "[SyncThread] Exception: " << e.what() << std::endl;
+            std::cerr << "[SyncThread] Exception in read loop: " << e.what() << std::endl;
+            struct sysinfo si;
+            if (sysinfo(&si) == 0) {
+                std::cerr << "[SyncThread] Memory at crash - Free RAM: " 
+                          << (si.freeram * si.mem_unit) / (1024 * 1024) << " MB / "
+                          << (si.totalram * si.mem_unit) / (1024 * 1024) << " MB, "
+                          << "Free Swap: " << (si.freeswap * si.mem_unit) / (1024 * 1024) << " MB"
+                          << std::endl;
+            }
+            closedir(dir);
         }
+#else
+        // Windows fallback using std::filesystem
+        std::filesystem::path buffer_path(buffer_dir);
+        if (!std::filesystem::exists(buffer_path) || !std::filesystem::is_directory(buffer_path)) {
+            continue;
+        }
+        try {
+            for (const auto& entry : std::filesystem::directory_iterator(buffer_path)) {
+                if (!entry.is_regular_file()) continue;
+
+                auto path = entry.path();
+                if (path.extension() == ".json") {
+                    std::string json_path = path.string();
+                    std::string img_path = json_path.substr(0, json_path.length() - 5);
+
+                    if (std::filesystem::exists(img_path)) {
+                        try {
+                            std::filesystem::path img_p(img_path);
+                            bool img_ok = minio_client_.upload_file(edge::config::MINIO_BUCKET, img_p.filename().string(), img_path);
+
+                            if (img_ok) {
+                                std::ifstream f(json_path);
+                                if (!f.is_open()) continue;
+                                nlohmann::json data = nlohmann::json::parse(f);
+                                mqtt_client_.publish(edge::config::METADATA_TOPIC, data.dump());
+                                f.close();
+                                std::filesystem::remove(img_path);
+                                std::filesystem::remove(json_path);
+                            }
+                        } catch (...) {}
+                    }
+                }
+            }
+        } catch (...) {}
+#endif
     }
 }
 
