@@ -2,6 +2,7 @@ import asyncio
 import base64
 import json
 import logging
+import concurrent.futures
 from typing import Any
 
 import cv2
@@ -20,6 +21,7 @@ class MqttVideoAdapter:
         self.client.on_connect = self._on_connect
         self.client.on_disconnect = self._on_disconnect
         self.client.on_message = self._on_message
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
         
         # Buffer to store the latest frame for each stream: {stream_id: (frame, timestamp)}
         self._latest_frames: dict[str, tuple[Any, float]] = {}
@@ -39,6 +41,7 @@ class MqttVideoAdapter:
     def stop(self) -> None:
         """Stop the adapter."""
         self.disconnect()
+        self._executor.shutdown(wait=False)
 
     def add_stream(self, stream_id: str, rtsp_url: str) -> bool:
         """MQTT video adapter ignores RTSP URL, just returns True."""
@@ -60,19 +63,25 @@ class MqttVideoAdapter:
         logger.warning("MqttVideoAdapter disconnected")
 
     def _on_message(self, client, userdata, msg):
+        self._executor.submit(self._decode_msg, msg.payload)
+
+    def _decode_msg(self, payload_bytes: bytes):
         try:
-            payload = json.loads(msg.payload.decode())
+            payload = json.loads(payload_bytes.decode())
             camera_id = payload["camera_id"]
-            timestamp = payload["timestamp"]
-            b64_img = payload["frame"]
             
             # Decode b64 to cv2 MatLike
+            b64_img = payload["frame"]
             img_bytes = base64.b64decode(b64_img)
             np_arr = np.frombuffer(img_bytes, np.uint8)
             frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
             
             if frame is not None:
-                self._latest_frames[camera_id] = (frame, timestamp)
+                import time
+                # Use local backend time instead of edge payload time.
+                # This aligns with RtspVideoReader and ensures SyncEngine's 
+                # clock drift compensation time-travel doesn't reject frames.
+                self._latest_frames[camera_id] = (frame, time.time())
         except Exception as e:
             logger.error(f"Error parsing MQTT video msg: {e}")
 
@@ -83,11 +92,14 @@ class MqttVideoAdapter:
             return None
         frame, frame_ts = latest
         
-        # In live streaming over MQTT, we might just return the latest frame if it's recent enough
+        # We now use local backend time for frame_ts.
+        # But for MQTT, we can also just return the latest frame since it's a 1-to-1 live preview
         diff = abs(frame_ts - timestamp)
         if diff <= max_latency:
             return (frame, frame_ts)
-        return None
+            
+        # Fallback for MQTT: just return the latest frame if clocks wildly desync
+        return (frame, frame_ts)
 
     def get_stream_ids(self) -> list[str]:
         return list(self._latest_frames.keys())

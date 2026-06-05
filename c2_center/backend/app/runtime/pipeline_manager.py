@@ -17,6 +17,7 @@ import time
 from typing import Awaitable, Callable
 
 import numpy as np
+import supervision as sv
 
 from app.core.config import settings
 from app.domain.detection.converters import metadata_to_detections
@@ -46,6 +47,7 @@ class PipelineManager:
         self._zone_repo = zone_repo
         self._model_registry = model_registry
 
+        self._trackers: dict[str, sv.ByteTrack] = {}
         self._tasks: dict[str, asyncio.Task] = {}
         self._frame_subs: list[FrameSubscriber] = []
         self._stats_subs: list[StatsSubscriber] = []
@@ -88,6 +90,8 @@ class PipelineManager:
         if not self._running:
             logger.warning("Pipeline manager not started; deferring stream %s", stream_id)
             return
+        
+        self._trackers[stream_id] = sv.ByteTrack(minimum_consecutive_frames=1)
         self._dispatcher.attach_stream(stream_id)
         task = asyncio.create_task(self._loop(stream_id), name=f"pipeline-{stream_id}")
         self._tasks[stream_id] = task
@@ -98,6 +102,7 @@ class PipelineManager:
         task = self._tasks.pop(stream_id, None)
         if task:
             task.cancel()
+        self._trackers.pop(stream_id, None)
         self._dispatcher.detach_stream(stream_id)
 
     async def _loop(self, stream_id: str) -> None:
@@ -161,6 +166,10 @@ class PipelineManager:
                         )
                     self._diag_logged = True
                 # ============================================================
+
+                if len(detections) > 0 and getattr(detections, 'tracker_id', None) is None:
+                    if stream_id in self._trackers:
+                        detections = self._trackers[stream_id].update_with_detections(detections=detections)
 
                 if not objects:
                     # Skip analytics if no objects, but keep emitting stats to avoid WS timeout

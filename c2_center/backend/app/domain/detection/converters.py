@@ -52,9 +52,13 @@ def metadata_to_detections(objects: list[dict]) -> sv.Detections:
             _missing_tracker_warned = True
         tracker_ids.append(t_id)
 
-    return sv.Detections(
-        xyxy=np.array(xyxy, dtype=np.float32),
-        confidence=np.array(confs, dtype=np.float32),
-        class_id=np.array(class_ids, dtype=int),
-        tracker_id=np.array(tracker_ids, dtype=int),
-    )
+    kwargs = {
+        "xyxy": np.array(xyxy, dtype=np.float32),
+        "confidence": np.array(confs, dtype=np.float32),
+        "class_id": np.array(class_ids, dtype=int),
+    }
+    
+    if any(t_id != -1 for t_id in tracker_ids):
+        kwargs["tracker_id"] = np.array(tracker_ids, dtype=int)
+
+    return sv.Detections(**kwargs)

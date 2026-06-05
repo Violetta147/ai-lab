@@ -25,7 +25,6 @@ class LineCrossingAnalyzer(BaseAnalyzer):
         self._box_ann = sv.BoxAnnotator(thickness=2)
         self._prev_entry = None
         self._prev_exit = None
-        self._tracker = sv.ByteTrack(minimum_consecutive_frames=1)
 
     def reset(self):
         self._entry_zone = None
@@ -60,10 +59,6 @@ class LineCrossingAnalyzer(BaseAnalyzer):
             else:
                 self._exit_zone = None
             self._prev_exit = exit_line
-
-        # If detections lack tracker_id, use local ByteTrack
-        if getattr(detections, "tracker_id", None) is None:
-            detections = self._tracker.update_with_detections(detections=detections)
 
         if self._entry_zone:
             self._entry_zone.trigger(detections=detections)
