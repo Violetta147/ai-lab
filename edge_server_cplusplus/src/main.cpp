@@ -218,8 +218,8 @@ int main() {
             std::string stream_id = edge::config::CAMERA_ID();
             std::string rtsp_url = "rtsp://" + mediamtx_host + ":8554/" + stream_id;
             
-            // GStreamer pipeline for Jetson (nvv4l2h264enc) to RTSP Push
-            std::string pipeline = "appsrc ! videoconvert ! nvv4l2h264enc insert-sps-pps=true bitrate=4000000 ! h264parse ! rtspclientsink location=" + rtsp_url;
+            // GStreamer pipeline for Jetson (x264enc for compatibility, protocols=tcp for MediaMTX)
+            std::string pipeline = "appsrc ! videoconvert ! video/x-raw,format=I420 ! x264enc speed-preset=ultrafast tune=zerolatency bitrate=2000 ! rtspclientsink location=" + rtsp_url + " protocols=tcp";
             
             std::cout << "[VideoWriter] Opening RTSP push to: " << rtsp_url << "\n";
             writer.open(pipeline, cv::CAP_GSTREAMER, 0, 15, cv::Size(frame.cols, frame.rows), true);

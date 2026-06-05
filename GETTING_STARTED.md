@@ -46,29 +46,26 @@ Open the newly created `.env` file in your code editor and update the default pa
 The core infrastructure services share a common Docker network (`mlops_traffic_net`) so that all Python and Node applications can easily reach them.
 
 ```powershell
-# Open terminal at the root of the project
-cd D:\datas\Final.yolov8\data_pipeline\core-backbone
+# Create the shared Docker network (only needed once, skip if already exists)
+docker network create mlops_traffic_net
 
-# Start MQTT, PostgreSQL, Redis, MinIO, and MediaMTX in the background
+# Start Core Backbone: MQTT, PostgreSQL, Redis, MinIO, and MediaMTX
+cd D:\datas\Final.yolov8\data_pipeline\core-backbone
 docker compose up -d
 ```
 *Wait a few seconds for all containers to reach a `running` state.*
 
-### 🪣 4.1 Configure MinIO Buckets
-The MLOps Data Pipeline requires 5 specific buckets to function correctly. You must create them before starting the pipeline.
+> ⚠️ **Thứ tự khởi động rất quan trọng:** Network → Core Backbone → CVAT → Pipeline. Nếu Pipeline khởi động trước Core Backbone, container `mqtt_listener` sẽ liên tục Restarting vì không kết nối được MQTT Broker.
 
-1. Open your browser and navigate to `http://localhost:9002` (MinIO Console).
-2. Log in with the default credentials (as defined in `docker-compose.yml`):
-   - Username: `admin`
-   - Password: `password123`
-3. Go to **Buckets** on the left menu and click **Create Bucket**. Create the following exactly as named:
-   - `raw-data` *(Used by Edge Server to upload raw frames)*
-   - `pseudo-labels` *(Used to store AI-generated pre-labels)*
-   - `archived-images` *(Used for archiving old data)*
-   - `archived-labels` *(Used for archiving old labels)*
-   - `labeled-data` *(Used by CVAT for human annotations)*
-   - `base-dataset` *(Used for training datasets)*
-   - `production-models` *(Used to store .pt and .engine AI models)*
+### 🪣 4.1 MinIO Buckets (Tự động)
+Các bucket cần thiết được tạo tự động bởi container `minio-init` khi khởi động Core Backbone:
+`raw-data`, `pseudo-labels`, `archived-images`, `archived-labels`, `labeled-data`, `base-dataset`, `production-models`.
+
+Nếu cần kiểm tra hoặc quản lý thủ công:
+1. Mở trình duyệt: `http://localhost:9001` (MinIO Console)
+2. Đăng nhập:
+   - Username: `minioadmin`
+   - Password: `minioadminpassword`
 
 ---
 
@@ -105,7 +102,8 @@ The Data Pipeline listens to MQTT for edge detections and uses Celery to process
 cd D:\datas\Final.yolov8\data_pipeline\pipeline
 
 # Start the Celery workers, Beat scheduler, and MQTT listener
-docker compose up -d
+# Dùng --build để đảm bảo image pipeline-app được cập nhật khi code thay đổi
+docker compose up -d --build
 ```
 
 ---
@@ -193,5 +191,54 @@ pytest tests/test_mqtt_adapters.py
 2. **Check API:** Go to `http://localhost:8000/api/health` - both `mqtt_connected` and `db_connected` should be `true`.
 3. **Check UI:** Open `http://localhost:5173` and go to the "Grid View". You should see your camera feeds loading.
 4. **Check Tracking:** If mock data is running or the Jetson is active, bounding boxes will begin drawing over the video feeds automatically!
+
+---
+
+## 📋 Quick Start — Khởi động hàng ngày
+
+Nếu mọi thứ đã được cài đặt từ trước, chỉ cần chạy lần lượt:
+
+```powershell
+# 1. Core Backbone (DB, MQTT, MinIO, Redis, MediaMTX)
+cd D:\datas\Final.yolov8\data_pipeline\core-backbone
+docker compose up -d
+
+# 2. CVAT
+cd D:\datas\Final.yolov8\data_pipeline\cvat
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+# 3. Data Pipeline
+cd D:\datas\Final.yolov8\data_pipeline\pipeline
+docker compose up -d
+```
+
+> 💡 Tất cả container đều có `restart: unless-stopped` hoặc `restart: always`, nên thông thường chúng sẽ tự khởi động khi Docker Desktop bật lên.
+
+---
+
+## 🔧 Troubleshooting
+
+### Container `core-backbone-db-1` không khởi động — lỗi port
+```
+Error: listen tcp 0.0.0.0:5433: bind: An attempt was made to access a socket...
+```
+Windows Hyper-V đôi khi tự reserve một dải port. Kiểm tra:
+```powershell
+netsh interface ipv4 show excludedportrange protocol=tcp
+```
+Nếu port bị chặn, mở **PowerShell Admin**:
+```powershell
+net stop winnat
+net start winnat
+```
+Rồi chạy lại `docker compose up -d` tại `core-backbone`.
+
+### Container `pipeline-mqtt_listener-1` liên tục Restarting
+Nguyên nhân: MQTT Broker chưa chạy. Đảm bảo Core Backbone đã khởi động **trước** Pipeline.
+
+### Docker Desktop khởi động chậm / treo
+1. Thoát Docker Desktop (chuột phải icon khay hệ thống → Quit)
+2. Mở PowerShell: `wsl --shutdown`
+3. Mở lại Docker Desktop, đợi icon chuyển xanh lá
 
 Happy Coding! 🎉
