@@ -27,11 +27,11 @@ void DiskWriterThread::stop() {
     }
 }
 
-#include <filesystem>
+#include <sys/stat.h>
 
 void DiskWriterThread::run() {
     std::cout << "🚀 Disk Writer Thread started.\n";
-    std::filesystem::create_directory("buffer");
+    mkdir("buffer", 0777);
     while (running_) {
         auto item = queue_.pop(std::chrono::milliseconds(1000));
         if (!item) {

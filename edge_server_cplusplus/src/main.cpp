@@ -206,6 +206,7 @@ int main() {
 
         auto [should_pub, gate_reason] = pub_gate.should_publish(frame);
         if (!should_pub) {
+            std::cout << "⚠️ Bị Publish Gate chặn: " << gate_reason << "\n";
             continue;
         }
 
