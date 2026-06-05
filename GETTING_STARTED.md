@@ -50,6 +50,9 @@ $env:CVAT_HOST="192.168.1.50"
 # Start CVAT
 docker compose up -d
 
+# Apply database migrations first
+docker exec -it cvat_server bash -ic "python3 ~/manage.py migrate"
+
 # Create an admin account
 docker exec -it cvat_server bash -ic "python3 ~/manage.py createsuperuser"
 ```
@@ -100,15 +103,51 @@ Open your browser and navigate to `http://localhost:5173`.
 
 ---
 
-## 📹 6. Starting Edge AI (Jetson Nano)
+## 📹 6. Starting Camera Streams & Edge AI (Jetson Nano)
 
-If you have the physical Jetson Nano hardware:
-1. Connect to the Jetson Nano via SSH.
-2. Deploy the `edge_server` folder to the device.
-3. Start the edge server script (e.g. `python main.py`) to begin publishing bounding boxes to your MQTT broker (`192.168.1.50:1883`).
+### 🎥 6.1 Start MediaMTX & a Simulated Camera Stream (FFmpeg)
+Before streaming any video, you must start the **MediaMTX** RTSP server. This acts as the central router for your video streams.
 
-### 🧪 6.1 Simulating Edge Data (No Hardware Needed)
-If you just want to see data flowing without a Jetson Nano, you can use our built-in tests to mock MQTT data:
+Open a **new PowerShell terminal** and start MediaMTX:
+```powershell
+cd D:\datas\Final.yolov8\rstp\mediamtx_v1.17.1_windows_amd64
+.\mediamtx.exe ..\..\c2_center\infrastructure\mediamtx.yml
+```
+
+Once MediaMTX is running, open **another PowerShell terminal** and run the following FFmpeg command. It loops a sample video, resizes it to **640x640** (optimal for YOLO), uses H.264, and pushes it via TCP to prevent latency issues in the OpenCV backend:
+
+```powershell
+ffmpeg -re -stream_loop -1 -i "D:\datas\Final.yolov8\datasets\VID_20260404_160133.mp4" -vf "scale=640:640" -c:v libx264 -preset ultrafast -tune zerolatency -b:v 2M -maxrate 2M -bufsize 4M -pix_fmt yuv420p -g 30 -rtsp_transport tcp -f rtsp rtsp://localhost:8554/cam_01
+```
+*(Note: Make sure you have added a camera with RTSP URL `rtsp://localhost:8554/cam_01` in the Frontend UI!)*
+
+### 🚀 6.2 Start the Edge Server (YOLO Inference)
+
+You can run either the Python or C++ version of the Edge Server to perform YOLO detection and publish bounding boxes back to the `c2_center` over MQTT.
+
+#### Option A: Python Edge Server
+This runs the standard Python implementation.
+```powershell
+cd D:\datas\Final.yolov8\edge_server
+# Install dependencies if you haven't already
+pip install -r requirements.txt
+# Start the edge server
+python main.py
+```
+
+#### Option B: C++ DeepStream Edge Server (`edge_server_cplusplus`)
+For maximum performance on Jetson hardware, compile and run the C++ version:
+```bash
+cd D:\datas\Final.yolov8\edge_server_cplusplus
+mkdir build && cd build
+cmake ..
+make -j$(nproc)
+# Start the C++ edge server
+./edge_server
+```
+
+### 🧪 6.3 Simulating Edge Data (No Video/Hardware Needed)
+If you don't want to run FFmpeg or the YOLO models locally, you can use our built-in tests to push fake tracking data to your local MQTT broker:
 ```powershell
 cd D:\datas\Final.yolov8\c2_center\backend
 pytest tests/test_mqtt_adapters.py
