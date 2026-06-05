@@ -211,12 +211,12 @@ int main() {
 
         // Initialize VideoWriter on first frame
         if (!writer_initialized) {
-            std::string backend_ip = "127.0.0.1";
-            if (const char* env_ip = std::getenv("BACKEND_STREAM_IP")) {
-                backend_ip = env_ip;
+            std::string mediamtx_host = "127.0.0.1";
+            if (const char* env_host = std::getenv("MEDIAMTX_HOST")) {
+                mediamtx_host = env_host;
             }
             std::string stream_id = edge::config::CAMERA_ID();
-            std::string rtsp_url = "rtsp://" + backend_ip + ":8554/" + stream_id;
+            std::string rtsp_url = "rtsp://" + mediamtx_host + ":8554/" + stream_id;
             
             // GStreamer pipeline for Jetson (nvv4l2h264enc) to RTSP Push
             std::string pipeline = "appsrc ! videoconvert ! nvv4l2h264enc insert-sps-pps=true bitrate=4000000 ! h264parse ! rtspclientsink location=" + rtsp_url;
